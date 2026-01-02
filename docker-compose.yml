@@ -1,0 +1,53 @@
+version: "3.7"
+
+services:
+  splash:
+    container_name: splash
+    hostname: splash
+    image: scrapinghub/splash
+    restart: unless-stopped
+    expose:
+      - "5023"
+      - "8050"
+      - "8051"
+    networks: [gas_risk]
+
+  mongo:
+    image: mongo:6
+    container_name: mongo_gas_risk
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+    ports:
+      - "27018:27017"
+    volumes:
+      - ./docker_volumes/mongo_data:/data/db
+    networks: [gas_risk]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u $$MONGO_INITDB_ROOT_USERNAME -p $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval 'db.runCommand({ ping: 1 }).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: mongo_express_gas_risk
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: "27017"
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin123
+      ME_CONFIG_MONGODB_AUTH_DATABASE: admin
+      # Optional: require a login to the mongo-express UI itself
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks: [gas_risk]
+
+networks:
+  gas_risk:
+    name: gas_risk
