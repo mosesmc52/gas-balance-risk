@@ -40,17 +40,25 @@ class MongoPipeline:
     def open_spider(self, spider):
         self.client = pymongo.MongoClient(self.mongo_uri)
         db = self.client[self.mongo_db]
-        self.collection = db[self.mongo_collection]
 
-        # Optional: create an index if using upsert
-        if self.upsert_key:
-            self.collection.create_index([(self.upsert_key, 1)], unique=True)
+        # Per-spider override
+        collection_name = getattr(
+            spider,
+            "mongo_collection",
+            self.mongo_collection,
+        )
+
+        self.collection = db[collection_name]
+
+        unique_fields = getattr(spider, "mongo_unique_fields", None)
+        if unique_fields:
+            index_spec = [(f, 1) for f in unique_fields]
+            self.collection.create_index(index_spec, unique=True)
 
         spider.logger.info(
-            "Connected to MongoDB: db=%s collection=%s upsert_key=%s",
-            self.mongo_db,
-            self.mongo_collection,
-            self.upsert_key,
+            "Mongo collection set to '%s' for spider '%s'",
+            collection_name,
+            spider.name,
         )
 
     def close_spider(self, spider):
@@ -58,33 +66,34 @@ class MongoPipeline:
             self.client.close()
 
     def process_item(self, item, spider):
-        if not self.collection:
+        if self.collection is None:
             return item
 
-        doc: Dict[str, Any] = dict(item)
+        doc = dict(item)
+        now = datetime.now(timezone.utc).isoformat()
 
-        # Add basic metadata
-        now = datetime.now(timezone.utc)
-        doc.setdefault("_meta", {})
-        doc["_meta"]["scraped_at_utc"] = now.isoformat()
+        unique_fields = getattr(spider, "mongo_unique_fields", None)
 
-        if self.upsert_key and self.upsert_key in doc:
-            key_val = doc[self.upsert_key]
+        if unique_fields:
+            missing = [f for f in unique_fields if f not in doc or doc[f] in (None, "")]
+            if missing:
+                spider.logger.warning(
+                    "Missing unique fields %s; inserting without dedupe", missing
+                )
+                self.collection.insert_one(doc)
+                return item
+
+            filt = {f: doc[f] for f in unique_fields}
             self.collection.update_one(
-                {self.upsert_key: key_val},
+                filt,
                 {
                     "$set": doc,
-                    "$setOnInsert": {"_meta.created_at_utc": now.isoformat()},
+                    "$setOnInsert": {"_meta.created_at_utc": now},
+                    "$currentDate": {"_meta.updated_at": True},
                 },
                 upsert=True,
             )
         else:
-            try:
-                self.collection.insert_one(doc)
-            except DuplicateKeyError:
-                # In case _id or other unique indexes collide
-                spider.logger.warning(
-                    "Duplicate key, skipping insert: %s", doc.get("_id")
-                )
+            self.collection.insert_one(doc)
 
         return item

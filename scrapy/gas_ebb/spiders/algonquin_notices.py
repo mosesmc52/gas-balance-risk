@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import scrapy
-from gas_ebb.items import Notice  # FIX: use your project item
+from gas_ebb.items import NoticeItem  # FIX: use your project item
 from scrapy_splash import SplashRequest
 
 FORMAT_DATE_TIME_STRING = "%m/%d/%Y %I:%M:%S %p"
@@ -40,6 +40,8 @@ class AlgonquinNoticesSpider(scrapy.Spider):
     name = "algonquin_notices"
     allowed_domains = ["infopost.enbridge.com", "localhost"]
     start_urls = ["https://infopost.enbridge.com/infopost/AGHome.asp?Pipe=AG"]
+    mongo_collection = "ebb_algonquin_notices"
+    mongo_unique_fields = ["tsp", "notice_id", "posted_dt"]
 
     # Splash defaults (tune as needed)
     splash_args = {"wait": 1.5, "timeout": 90}
@@ -126,7 +128,7 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             )
 
     def parse_detail(self, response):
-        notice = Notice()
+        notice = NoticeItem()
         notice["kind"] = "pipeline"
         notice["url"] = response.url
 
