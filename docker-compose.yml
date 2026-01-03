@@ -19,7 +19,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin123
     ports:
-      - "27018:27017"
+      - "27017:27017"
     volumes:
       - ./docker_volumes/mongo_data:/data/db
     networks: [gas_risk]
@@ -55,7 +55,7 @@ services:
       dockerfile: Dockerfile.worker
     container_name: gas_risk_worker
     restart: unless-stopped
-    env_file: .env
+    env_file: .env.docker
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: America/New_York
@@ -67,7 +67,7 @@ services:
 
     volumes:
       - ./data:/app/data
-
+    networks: [gas_risk]
 
 
 networks:

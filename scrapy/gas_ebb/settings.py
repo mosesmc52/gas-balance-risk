@@ -25,6 +25,7 @@ ADDONS = {}
 
 # Splash Setup
 SPLASH_URL = os.getenv("SPLASH_URL", "http://splash:8050")
+
 # SPLASH_URL = "http://splash:8050"
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -58,6 +59,8 @@ DOWNLOAD_DELAY = 3
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+
+
 DOWNLOADER_MIDDLEWARES = {
     #    "middlewares.DownloaderMiddleware": 543,
     "scrapy_splash.SplashCookiesMiddleware": 723,
@@ -110,7 +113,7 @@ FEED_EXPORT_ENCODING = "utf-8"
 
 # FEED_URI = "%s/data/%%(name)s/%%(time)s.json" % ROOT_PATH
 # FEED_FORMAT = "csv"
-
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DATABASE = os.getenv("MONGO_DB")

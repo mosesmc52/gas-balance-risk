@@ -24,10 +24,12 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Fetch Henry Hub natural gas spot prices (daily) via eia-ng-client; save to CSV and/or Mongo."
     )
-    p.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
+    p.add_argument(
+        "--start", default=None, required=False, help="Start date (YYYY-MM-DD)"
+    )
     p.add_argument("--end", default=None, help="Optional end date (YYYY-MM-DD)")
     p.add_argument(
-        "--days_ago", type=int, default=0, help="The number of days ago to start"
+        "--days_ago", type=int, default=30, help="The number of days ago to start"
     )
     p.add_argument(
         "--out",
