@@ -466,7 +466,9 @@ def main():
     if args.start:
         start_date = args.start
     elif args.days_ago > 0:
-        start_date = datetime.now() - timedelta(days=args.days_ago)
+        start_date = (datetime.now() - timedelta(days=args.days_ago)).strftime(
+            "%Y-%m-%d"
+        )
 
     for st in stations:
         fp = download_station_csv(
