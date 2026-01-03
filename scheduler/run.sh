@@ -56,7 +56,7 @@ substep "Pipeline: Algonquin — Capacity"
 run_cmd scrapy crawl algonquin_capacity -s LOG_LEVEL=INFO
 
 substep "Pipeline: Algonquin — Notices"
-run_cmd scrapy crawl algonquin_notices -s LOG_LEVEL=INFO
+scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
 
 # ------------------------------
 # PIPELINE: <ADD NEW PIPELINE HERE>

@@ -9,7 +9,7 @@ MONGO_BACKUP_DIR=./mongo_backup
 MONGO_DUMP_PATH=/data/dump
 
 # List of databases to export
-MONGO_DBS=gas_risk
+MONGO_DBS=energy_gas_risk
 
 # Default Compose files
 MAIN_COMPOSE_FILE := docker-compose.yml

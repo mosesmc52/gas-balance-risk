@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import scrapy
-from gas_ebb.items import NoticeItem  # FIX: use your project item
+from gas_ebb.items import NoticeItem
 from scrapy_splash import SplashRequest
 
 FORMAT_DATE_TIME_STRING = "%m/%d/%Y %I:%M:%S %p"
@@ -46,6 +46,19 @@ class AlgonquinNoticesSpider(scrapy.Spider):
     # Splash defaults (tune as needed)
     splash_args = {"wait": 1.5, "timeout": 90}
 
+    # ---- NEW: CLI-configurable cutoff ----
+    # Run like:
+    #   scrapy crawl algonquin_notices -a cutoff_days=1
+    #   scrapy crawl algonquin_notices -a cutoff_days=3
+    def __init__(self, cutoff_days: int | str = 1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        try:
+            self.cutoff_days = int(cutoff_days)
+        except (TypeError, ValueError):
+            self.cutoff_days = 1
+        if self.cutoff_days < 0:
+            self.cutoff_days = 0
+
     # Scrapy 2.13+ preferred entrypoint (keeps you future-proof)
     async def start(self):
         for url in self.start_urls:
@@ -73,7 +86,6 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=AG&type=CRI",
             "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=AG&type=NON",
         ]:
-
             yield SplashRequest(
                 url=url,
                 callback=self.parse_list,
@@ -83,24 +95,25 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             )
 
     def parse_list(self, response):
+        # ---- UPDATED: use CLI-configured cutoff_days ----
+        cutoff_date = datetime.now().date() - timedelta(days=self.cutoff_days)
 
-        # Only keep last 1 day (adjust as needed)
-        cutoff_date = datetime.now().date() - timedelta(days=1)
-
-        # More robust row selection (works even if tbody is missing)
-        # We filter rows that contain a link to a detail page.
         rows = response.xpath(
             "//tr[.//a[contains(@href, 'NoticeDetail') or contains(@href, 'NoticesDetail') or contains(@href, 'Notice')]]"
         )
 
-        self.logger.info("list url=%s rows=%s", response.url, len(rows))
+        self.logger.info(
+            "list url=%s rows=%s cutoff_days=%s cutoff_date=%s",
+            response.url,
+            len(rows),
+            self.cutoff_days,
+            cutoff_date,
+        )
 
         for row in rows:
-            # Posted datetime is typically in the 2nd cell; normalize whitespace
             posted_raw = row.xpath("normalize-space(.//td[2])").get()
             posted_dt = _parse_dt(posted_raw)
 
-            # If we cannot parse, skip row (don’t crash / don’t silently stop)
             if not posted_dt:
                 continue
 
@@ -110,7 +123,6 @@ class AlgonquinNoticesSpider(scrapy.Spider):
 
             href = row.xpath(".//td[last()-1]//a/@href").get()
             if not href:
-                # fallback: try any link in the row
                 href = row.xpath(".//a/@href").get()
 
             if not href:
@@ -132,18 +144,15 @@ class AlgonquinNoticesSpider(scrapy.Spider):
         notice["kind"] = "pipeline"
         notice["url"] = response.url
 
-        # headingData is typically a block of text nodes; strip and drop blanks
         heading = _clean_text_list(
             response.xpath('//div[contains(@id, "headingData")]//text()').getall()
         )
 
-        # Defensive logging: if the page format changes, you will see it immediately.
         if len(heading) < 8:
             self.logger.warning(
                 "Unexpected headingData length=%s url=%s", len(heading), response.url
             )
 
-        # Preserve your original positional mapping, but with safe getters
         notice["tsp"] = _safe_get(heading, 0)
         notice["name"] = _safe_get(heading, 1)
         notice["notice_id"] = _safe_get(heading, 7)
@@ -151,7 +160,6 @@ class AlgonquinNoticesSpider(scrapy.Spider):
         critical_label = _safe_get(heading, 2).lower()
         notice["critical"] = "Y" if "critical" in critical_label else "N"
 
-        # These are usually date + time pairs in adjacent fields
         notice["effective_dt"] = _parse_dt(
             f"{_safe_get(heading, 3)} {_safe_get(heading, 4)}"
         )
@@ -173,7 +181,6 @@ class AlgonquinNoticesSpider(scrapy.Spider):
 
         notice["subject"] = _safe_get(heading, 16)
 
-        # Keep bulletin as HTML (your original approach), but pull the container(s) reliably
         bulletin_html = response.xpath('//div[contains(@id, "bulletin")]').getall()
         notice["body"] = "".join(bulletin_html).strip()
 
