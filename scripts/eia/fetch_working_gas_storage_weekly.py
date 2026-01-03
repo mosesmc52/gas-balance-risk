@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -27,6 +27,9 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
     p.add_argument("--end", default=None, help="Optional end date (YYYY-MM-DD)")
+    p.add_argument(
+        "--days_ago", type=int, default=0, help="The number of days ago to start"
+    )
     p.add_argument(
         "--region", default="lower48", help='Storage region (default: "lower48").'
     )
@@ -201,13 +204,17 @@ def main() -> None:
         )
 
     client = EIAClient()
+    if args.start:
+        start_date = args.start
+    elif args.days_ago > 0:
+        start_date = datetime.now() - timedelta(days=args.days_ago)
 
     if args.end:
         rows = client.natural_gas.storage(
-            start=args.start, end=args.end, region=args.region
+            start=start_date, end=args.end, region=args.region
         )
     else:
-        rows = client.natural_gas.storage(start=args.start, region=args.region)
+        rows = client.natural_gas.storage(start=start_date, region=args.region)
 
     df = _rows_to_df(rows, region=args.region)
     if df.empty:

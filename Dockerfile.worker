@@ -1,0 +1,35 @@
+FROM python:3.11-slim
+
+# System deps: cron + supervisor + build tools (keep minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cron \
+    supervisor \
+    ca-certificates \
+    curl \
+    build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ----- Python deps -----
+COPY pyproject.toml poetry.lock* /app/
+RUN pip3 install poetry
+RUN poetry config virtualenvs.create false
+RUN poetry install --no-root
+
+
+# Copy application code
+COPY . /app
+
+# Supervisor config + cron schedule
+COPY supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+COPY scheduler/crontab /etc/cron.d/gas_risk_cron
+RUN chmod 0644 /etc/cron.d/gas_risk_cron && crontab /etc/cron.d/gas_risk_cron
+
+# Cron file permissions + register crontab
+RUN chmod 0644 /etc/cron.d/gas_risk_cron \
+  && crontab /etc/cron.d/gas_risk_cron
+
+# Log to stdout/stderr
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

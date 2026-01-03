@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,6 +26,9 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--start", required=True, help="Start date (YYYY-MM-DD)")
     p.add_argument("--end", default=None, help="Optional end date (YYYY-MM-DD)")
+    p.add_argument(
+        "--days_ago", type=int, default=0, help="The number of days ago to start"
+    )
     p.add_argument(
         "--out",
         default="data/eia/henry_hub_spot_prices_daily.csv",
@@ -202,11 +205,15 @@ def main() -> None:
         )
 
     client = EIAClient()
+    if args.start:
+        start_date = args.start
+    elif args.days_ago > 0:
+        start_date = datetime.now() - timedelta(days=args.days_ago)
 
     if args.end:
-        rows = client.natural_gas.spot_prices(start=args.start, end=args.end)
+        rows = client.natural_gas.spot_prices(start=start_date, end=args.end)
     else:
-        rows = client.natural_gas.spot_prices(start=args.start)
+        rows = client.natural_gas.spot_prices(start=start_date)
 
     df = _rows_to_df(rows)
     if df.empty:

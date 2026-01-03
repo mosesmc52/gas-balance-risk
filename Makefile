@@ -1,5 +1,6 @@
 .PHONY: up build daemon down clean logs
 
+WORKER_CONTAINER=gas_risk_worker
 MONGO_CONTAINER=mongo_gas_risk
 MONGO_USER=admin
 MONGO_PASS=admin123
@@ -47,6 +48,8 @@ clean:
 logs:
 	docker-compose -f $(MAIN_COMPOSE_FILE) logs -f
 
+shell:
+	docker exec -it $(WORKER_CONTAINER) /bin/bash
 
 
 mongo-export:

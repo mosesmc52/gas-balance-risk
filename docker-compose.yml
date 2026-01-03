@@ -48,6 +48,28 @@ services:
         condition: service_healthy
     networks: [gas_risk]
 
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: gas_risk_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      TZ: America/New_York
+    depends_on:
+      mongo:
+        condition: service_healthy
+      splash:
+        condition: service_started
+
+    volumes:
+      - ./data:/app/data
+
+
+
 networks:
   gas_risk:
     name: gas_risk

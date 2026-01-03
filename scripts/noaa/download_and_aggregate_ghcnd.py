@@ -3,7 +3,7 @@
 Download NOAA GHCND daily station CSVs from:
   https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/
 
-Filter stations from an input CSV where pipeline == algonquin, download station files,
+Filter stations from an input CSV where pipeline == ..., download station files,
 then compute a region-level daily aggregation and save.
 
 Optionally upsert station-day and region-day results into MongoDB.
@@ -22,7 +22,7 @@ import argparse
 import json
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -421,6 +421,9 @@ def main():
     )
     p.add_argument("--out-dir", default="data/noaa", help="Output directory")
     p.add_argument("--start", default=None, help="YYYY-MM-DD (optional)")
+    p.add_argument(
+        "--days_ago", type=int, default=0, help="The number of days ago to start"
+    )
     p.add_argument("--end", default=None, help="YYYY-MM-DD (optional)")
     p.add_argument("--timeout", type=int, default=60, help="HTTP timeout seconds")
 
@@ -460,6 +463,11 @@ def main():
 
     frames = []
 
+    if args.start:
+        start_date = args.start
+    elif args.days_ago > 0:
+        start_date = datetime.now() - timedelta(days=args.days_ago)
+
     for st in stations:
         fp = download_station_csv(
             st.ghcnd_station_id, out_dir=station_dir, timeout=args.timeout
@@ -467,7 +475,7 @@ def main():
         df_st = read_and_normalize_station_file(
             station_id=st.ghcnd_station_id,
             filepath=fp,
-            start_date=args.start,
+            start_date=start_date,
             end_date=args.end,
         )
         frames.append(df_st)
@@ -497,7 +505,7 @@ def main():
             "stations_normalized_csv": station_norm_path,
             "region_daily_csv": region_path,
         },
-        "date_filter": {"start_date": args.start, "end_date": args.end},
+        "date_filter": {"start_date": start_date, "end_date": args.end},
         "aggregation": {
             "tavg": "median and mean across stations",
             "hdd": "computed from regional tavg using base 65F",

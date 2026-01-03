@@ -24,7 +24,7 @@ ADDONS = {}
 
 
 # Splash Setup
-SPLASH_URL = "http://localhost:8050"
+SPLASH_URL = os.getenv("SPLASH_URL", "http://splash:8050")
 # SPLASH_URL = "http://splash:8050"
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
