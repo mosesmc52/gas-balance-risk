@@ -115,6 +115,18 @@ echo "[STEP 4] NOAA ingestion completed"
 # Job end
 # ============================================================
 
+# ============================================================
+# STEP 4 — NOAA GHCND daily station aggregation
+# ============================================================
+echo "[STEP 5] Backup Mongodb to Digital Ocean Spaces"
+
+run_cmd python -m scripts.ops.backup.mongo_backup
+
+echo "[STEP 6] NOAA Backup completed"
+# ============================================================
+# Job end
+# ============================================================
+
 JOB_END_TS="$(date -u)"
 
 echo

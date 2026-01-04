@@ -1,18 +1,51 @@
-#!/usr/bin/env python3
 """
-Backup MongoDB to a compressed archive and upload to DigitalOcean Spaces.
+MongoDB backup to a compressed archive and upload to DigitalOcean Spaces.
 
-Requires:
-- mongodump installed and available on PATH
-- tar available on PATH
-- boto3 configured via SpacesClient env vars:
-  SPACES_KEY, SPACES_SECRET, SPACES_BUCKET, SPACES_REGION (default nyc3),
-  optional: SPACES_ENDPOINT, SPACES_CDN_BASE
+This script supports two backup strategies:
 
-Mongo env vars:
+1) Physical backup (preferred when available)
+   - Uses the external MongoDB Database Tools (`mongodump`)
+   - Produces a BSON dump suitable for `mongorestore`
+   - Provides stronger consistency guarantees on replica sets
+   - Requires `mongodump` and `tar` to be installed and available on PATH
+
+2) Logical backup (fallback / portable mode)
+   - Uses PyMongo to export collections as newline-delimited Extended JSON (EJSON)
+   - Compresses data using gzip and packages with Python's tarfile
+   - Exports collection index metadata
+   - Does NOT require MongoDB tools, but offers weaker consistency guarantees
+   - Intended for environments where `mongodump` is unavailable (e.g. minimal containers)
+
+External dependencies (system):
+- mongodump (MongoDB Database Tools) — required for physical backup mode
+- tar — required for physical backup mode
+
+Python dependencies:
+- pymongo (logical backup mode)
+- boto3
+- python-dotenv
+
+Spaces configuration (environment variables):
+- SPACES_KEY
+- SPACES_SECRET
+- SPACES_BUCKET
+- SPACES_REGION (default: nyc3)
+- Optional:
+  - SPACES_ENDPOINT
+  - SPACES_CDN_BASE
+
+MongoDB configuration (environment variables):
 - MONGO_URI (required)
-Optional:
-- MONGO_DB (if set, dump only this DB; otherwise full instance)
+  - Must include correct authSource if using authentication
+    e.g. mongodb://user:pass@host:27017/?authSource=admin
+- Optional:
+  - MONGO_DB (if set, backs up only this database; otherwise all non-system databases)
+
+Operational notes:
+- Physical backups require MongoDB authentication credentials with read access
+- Logical backups do not include users, roles, or oplog data
+- On standalone MongoDB instances, snapshot-consistent reads are not available
+- On replica sets or mongos, snapshot transactions may be used when supported
 """
 
 from __future__ import annotations
@@ -26,9 +59,10 @@ import sys
 import tempfile
 from dataclasses import dataclass
 
-# Import your existing helper
-# Ensure spaces.py is on your PYTHONPATH (e.g., project root) or adjust import accordingly.
-from spaces import SpacesClient
+from dotenv import load_dotenv
+from scripts.ops.storage.spaces import SpacesClient
+
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -188,7 +222,13 @@ def main() -> int:
     _ensure_tool("mongodump")
     _ensure_tool("tar")
 
-    spaces = SpacesClient()  # uses env vars for Spaces creds/config
+    spaces = SpacesClient(
+        key=os.getenv("SPACES_KEY"),
+        secret=os.getenv("SPACES_SECRET"),
+        bucket=os.getenv("SPACES_BUCKET"),
+        region=os.getenv("SPACES_REGION"),
+        endpoint=os.getenv("SPACES_ENDPOINT"),
+    )  # uses env vars for Spaces creds/config
 
     stamp = _utc_stamp()
     logical_name = args.name or (args.mongo_db if args.mongo_db else "all")
