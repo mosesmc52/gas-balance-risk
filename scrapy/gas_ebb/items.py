@@ -58,3 +58,4 @@ class CapacityItem(scrapy.Item):
     Operationally_Available_Capacity = scrapy.Field()
     TSP_Name = scrapy.Field()
     TSP = scrapy.Field()
+    requested_post_date_utc = scrapy.Field()

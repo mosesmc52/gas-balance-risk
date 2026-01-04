@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from data.mongo import (
+from scripts.ops.storage.mongo import (
     load_capacity_df,
     load_henry_hub_daily,
     load_noaa_region_daily,
