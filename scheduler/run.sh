@@ -120,7 +120,7 @@ echo "[STEP 4] NOAA ingestion completed"
 # ============================================================
 echo "[STEP 5] Backup Mongodb to Digital Ocean Spaces"
 
-run_cmd python -m scripts.ops.backup.mongo_backup
+run_cmd python -m scripts.ops.backup.mongo_backup --retention-days 7
 
 echo "[STEP 6] NOAA Backup completed"
 # ============================================================

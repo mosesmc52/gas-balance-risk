@@ -68,10 +68,10 @@ class SpacesClient:
         Prefer CDN domain when available.
         """
         if self.cdn_base:
-            return urljoin(self.cdn_base.rstrip("/") + "/", key)
+            return urljoin(self.cdn_base.rstrip("/") + "/", key.lstrip("/"))
 
-        # default Spaces endpoint
-        return f"{self.endpoint.rstrip('/')}/{self.bucket}/{key}"
+        # endpoint already points at https://{bucket}.{region}.digitaloceanspaces.com
+        return f"{self.endpoint.rstrip('/')}/{key.lstrip('/')}"
 
     # --------------------------- #
     # Public API

@@ -95,19 +95,9 @@ def _ensure_tool(name: str) -> None:
 
 
 def _build_public_url(spaces: SpacesClient, key: str) -> str:
-    """
-    DO Spaces object URLs are:
-      - If using CDN: <cdn_base>/<key>
-      - Otherwise: https://<bucket>.<region>.digitaloceanspaces.com/<key>
-
-    NOTE: Your SpacesClient.public_url() method, as written, appears to double-insert the bucket.
-    This function avoids that by constructing a known-correct URL format.
-    """
     if spaces.cdn_base:
         return spaces.cdn_base.rstrip("/") + "/" + key.lstrip("/")
 
-    # Default DO Spaces virtual-hosted-style URL:
-    # https://{bucket}.{region}.digitaloceanspaces.com/{key}
     region = spaces.region or os.getenv("SPACES_REGION", "nyc3")
     bucket = spaces.bucket
     return f"https://{bucket}.{region}.digitaloceanspaces.com/{key.lstrip('/')}"
@@ -121,8 +111,6 @@ def _mongodump(mongo_uri: str, out_dir: str, mongo_db: str | None) -> None:
 
 
 def _tar_gz_dir(src_dir: str, out_path: str) -> None:
-    # Create a tar.gz of the directory contents
-    # tar -C <src_dir> -czf <out_path> .
     _run(["tar", "-C", src_dir, "-czf", out_path, "."])
 
 
@@ -139,8 +127,14 @@ def _upload_file(spaces: SpacesClient, file_path: str, key: str, acl: str) -> in
     return size
 
 
-def _list_keys_with_prefix(spaces: SpacesClient, prefix: str) -> list[str]:
-    keys: list[str] = []
+def _list_objects_with_prefix(spaces: SpacesClient, prefix: str) -> list[dict]:
+    """
+    Returns objects as dicts with at least:
+      - Key (str)
+      - LastModified (datetime, tz-aware)
+      - Size (int)
+    """
+    objs: list[dict] = []
     continuation = None
 
     while True:
@@ -151,19 +145,19 @@ def _list_keys_with_prefix(spaces: SpacesClient, prefix: str) -> list[str]:
         resp = spaces.client.list_objects_v2(**kwargs)
         for obj in resp.get("Contents", []) or []:
             k = obj.get("Key")
-            if k:
-                keys.append(k)
+            lm = obj.get("LastModified")
+            if k and lm:
+                objs.append(obj)
 
         if resp.get("IsTruncated"):
             continuation = resp.get("NextContinuationToken")
         else:
             break
 
-    return keys
+    return objs
 
 
 def _delete_keys(spaces: SpacesClient, keys: list[str]) -> None:
-    # Batch delete up to 1000 at a time
     for i in range(0, len(keys), 1000):
         batch = keys[i : i + 1000]
         spaces.client.delete_objects(
@@ -202,12 +196,15 @@ def main() -> int:
         choices=["private", "public-read"],
         help="Spaces object ACL.",
     )
+
+    # --- UPDATED: retention by days (instead of count) ---
     parser.add_argument(
-        "--retention",
+        "--retention-days",
         type=int,
         default=0,
-        help="Keep N most recent backups under prefix/name; 0 disables cleanup.",
+        help="Keep backups from the last N days (UTC) under prefix/name; 0 disables cleanup.",
     )
+
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -228,13 +225,11 @@ def main() -> int:
         bucket=os.getenv("SPACES_BUCKET"),
         region=os.getenv("SPACES_REGION"),
         endpoint=os.getenv("SPACES_ENDPOINT"),
-    )  # uses env vars for Spaces creds/config
+    )
 
     stamp = _utc_stamp()
     logical_name = args.name or (args.mongo_db if args.mongo_db else "all")
 
-    # Key layout:
-    # backups/mongo/<logical_name>/<YYYY>/<MM>/<DD>/mongo_<logical_name>_<stamp>.tar.gz
     now = dt.datetime.now(dt.timezone.utc)
     key = (
         f"{args.prefix.rstrip('/')}/"
@@ -249,10 +244,7 @@ def main() -> int:
 
         archive_path = os.path.join(td, f"mongo_{logical_name}_{stamp}.tar.gz")
 
-        # 1) Dump
         _mongodump(args.mongo_uri, dump_dir, args.mongo_db)
-
-        # 2) Archive
         _tar_gz_dir(dump_dir, archive_path)
 
         size = os.path.getsize(archive_path)
@@ -263,26 +255,41 @@ def main() -> int:
             print("[dry-run] skipping upload and retention cleanup")
             return 0
 
-        # 3) Upload
         uploaded_size = _upload_file(spaces, archive_path, key=key, acl=args.acl)
         url = _build_public_url(spaces, key)
         print(f"[ok] uploaded: {uploaded_size:,} bytes")
         print(f"[ok] url: {url}")
 
-    # 4) Optional retention cleanup (by lexicographic key order works due to YYYY/MM/DD + timestamp naming)
-    if args.retention and args.retention > 0:
+    # --- UPDATED: retention cleanup by age (UTC days) ---
+    if args.retention_days and args.retention_days > 0:
         base_prefix = f"{args.prefix.rstrip('/')}/{logical_name}/"
-        keys = sorted(_list_keys_with_prefix(spaces, base_prefix))
-        if len(keys) > args.retention:
-            to_delete = keys[: len(keys) - args.retention]
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+            days=args.retention_days
+        )
+
+        objs = _list_objects_with_prefix(spaces, base_prefix)
+
+        # Only delete objects strictly older than cutoff
+        to_delete = []
+        for obj in objs:
+            lm = obj.get("LastModified")
+            k = obj.get("Key")
+            if not k or not lm:
+                continue
+            # boto3 returns tz-aware datetimes; keep everything >= cutoff
+            if lm < cutoff:
+                to_delete.append(k)
+
+        if to_delete:
             print(
-                f"[cleanup] deleting {len(to_delete)} old backups under {base_prefix} (retention={args.retention})"
+                f"[cleanup] deleting {len(to_delete)} backups older than {args.retention_days} days "
+                f"(cutoff={cutoff.isoformat()}) under {base_prefix}"
             )
-            _delete_keys(spaces, to_delete)
+            _delete_keys(spaces, sorted(to_delete))
             print("[cleanup] done")
         else:
             print(
-                f"[cleanup] nothing to delete (found {len(keys)} <= retention {args.retention})"
+                f"[cleanup] nothing to delete (no objects older than cutoff={cutoff.isoformat()})"
             )
 
     return 0
