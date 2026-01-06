@@ -1,7 +1,3 @@
-"""
-Note: https://www.learnaws.org/2020/12/18/aws-ses-boto3-guide/
-"""
-
 import boto3
 
 

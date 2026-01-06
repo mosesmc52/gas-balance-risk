@@ -7,6 +7,15 @@ set -euo pipefail
 
 JOB_START_TS="$(date -u)"
 
+# ------------------------------------------------------------
+# Reporting window configuration
+# ------------------------------------------------------------
+
+REPORT_LOOKBACK_DAYS="${REPORT_LOOKBACK_DAYS:-3}"
+
+END_DATE="$(date -u +%Y-%m-%d)"
+START_DATE="$(date -u -d "${REPORT_LOOKBACK_DAYS} days ago" +%Y-%m-%d)"
+
 echo "================================================"
 echo "Gas Risk Daily Job started at ${JOB_START_TS}"
 echo "================================================"
@@ -19,6 +28,8 @@ echo "================================================"
 : "${EIA_API_KEY:?Missing EIA_API_KEY}"
 
 export PYTHONUNBUFFERED=1
+
+
 
 # ============================================================
 # Helper functions (safe, minimal abstraction)
@@ -112,17 +123,25 @@ run_cmd python scripts/noaa/download_and_aggregate_ghcnd.py \
 echo "[STEP 4] NOAA ingestion completed"
 
 # ============================================================
-# Job end
+# STEP 5 — Daily ingestion report
 # ============================================================
 
+step "[STEP 5] Ops: Daily ingestion report"
+
+run_cmd poetry run python scripts/ops/ingest/daily_ingestion_report.py \
+  --start-date "${START_DATE}" \
+  --end-date "${END_DATE}"
+
+echo "[STEP 5] Daily ingestion report completed"
+
 # ============================================================
-# STEP 4 — NOAA GHCND daily station aggregation
+# STEP 6 — NOAA GHCND daily station aggregation
 # ============================================================
-echo "[STEP 5] Backup Mongodb to Digital Ocean Spaces"
+echo "[STEP 6] Backup Mongodb to Digital Ocean Spaces"
 
 run_cmd python -m scripts.ops.backup.mongo_backup --retention-days 7
 
-echo "[STEP 6] NOAA Backup completed"
+echo "[STEP 6] Backup Mongodb completed"
 # ============================================================
 # Job end
 # ============================================================
