@@ -18,8 +18,6 @@ services:
     pull_policy: always
     restart: unless-stopped
     depends_on:
-      mongo:
-        condition: service_healthy
       splash:
         condition: service_started
     volumes:
