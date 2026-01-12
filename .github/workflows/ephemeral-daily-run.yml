@@ -7,7 +7,7 @@ on:
 
 jobs:
   run_ephemeral:
-    environment: Staging
+    environment: Production
     runs-on: ubuntu-latest
 
     permissions:
@@ -145,15 +145,65 @@ jobs:
                 fi
 
                 # Pull and run
+                # -----------------------
+                # Start Splash sidecar
+                # -----------------------
+                # NOTE: If you do NOT need Splash for a given run, you can disable it by setting
+                # SPLASH_ENABLE=0 in /opt/job/env and wrapping this block with a conditional.
+                #
+                # We'll always start it here (simple + reliable).
+                SPLASH_IMAGE="scrapinghub/splash:3.5"
+                NET="jobnet"
+
+                docker network inspect "${NET}" >/dev/null 2>&1 || docker network create "${NET}" >>"$LOG" 2>&1
+
+                echo "Pulling Splash image: ${SPLASH_IMAGE}" | tee -a "$LOG"
+                docker pull "${SPLASH_IMAGE}" >>"$LOG" 2>&1
+
+                # Remove any prior splash container if exists
+                docker rm -f splash >/dev/null 2>&1 || true
+
+                echo "Starting Splash..." | tee -a "$LOG"
+                docker run -d --name splash --network "${NET}" \
+                  -p 8050:8050 \
+                  "${SPLASH_IMAGE}" >>"$LOG" 2>&1
+
+                # Wait for Splash to be ready
+                echo "Waiting for Splash readiness..." | tee -a "$LOG"
+                for i in {1..60}; do
+                  if curl -fsS "http://127.0.0.1:8050/_ping" >/dev/null 2>&1; then
+                    echo "Splash is ready." | tee -a "$LOG"
+                    break
+                  fi
+                  sleep 2
+                done
+
+                if ! curl -fsS "http://127.0.0.1:8050/_ping" >/dev/null 2>&1; then
+                  echo "Splash did not become ready in time." | tee -a "$LOG"
+                  docker logs splash | tail -n 200 | tee -a "$LOG" || true
+                  echo "1" > /opt/job/exit_code
+                  exit 1
+                fi
+
+                # -----------------------
+                # Pull and run job image
+                # -----------------------
+                echo "Pulling job image: ${JOB_IMAGE}" | tee -a "$LOG"
                 docker pull ${JOB_IMAGE} >>"\$LOG" 2>&1
 
+                # Force SPLASH_URL for the job container to the sidecar service name on jobnet.
+                # This overrides anything in /opt/job/env.
                 set +e
-                docker run --rm --env-file /opt/job/env ${JOB_IMAGE} /app/run.sh 2>&1 | tee -a "\$LOG"
+                docker run --rm --network "${NET}" \
+                  --env-file /opt/job/env \
+                  -e SPLASH_URL="http://splash:8050" \
+                  ${JOB_IMAGE} /app/run.sh 2>&1 | tee -a "\$LOG"
                 EXIT_CODE=${PIPESTATUS[0]}
                 set -e
 
-                echo "\$EXIT_CODE" > /opt/job/exit_code
-                echo "=== Job end: \$(date -Is), exit=\$EXIT_CODE ===" | tee -a "\$LOG"
+                # Optional: stop splash (not required since droplet will be destroyed)
+                docker rm -f splash >>"$LOG" 2>&1 || true
+
 
 
           runcmd:

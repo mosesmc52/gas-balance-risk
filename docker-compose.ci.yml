@@ -1,29 +1,10 @@
 version: "3.7"
 
-services:
-  splash:
-    container_name: splash
-    hostname: splash
-    image: scrapinghub/splash
-    restart: unless-stopped
-    expose:
-      - "5023"
-      - "8050"
-      - "8051"
-    networks: [gas_risk]
-
-  worker:
-    container_name: gas_risk_worker
+worker:
+    build:
+      context: .
     image: ghcr.io/mosesmc52/gas-balance-risk:${TAG:-latest}
-    pull_policy: always
     restart: unless-stopped
-    depends_on:
-      splash:
-        condition: service_started
-    volumes:
-      - ./data:/app/data
-    networks: [gas_risk]
-
-networks:
-  gas_risk:
-    name: gas_risk
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
