@@ -4,6 +4,7 @@ services:
   workers:
     build:
       context: .
+      dockerfile: Dockerfile.worker
     image: ghcr.io/mosesmc52/gas-balance-risk:${TAG:-latest}
     restart: unless-stopped
     dns:
