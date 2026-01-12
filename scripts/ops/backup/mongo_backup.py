@@ -59,6 +59,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 
+import botocore
 from dotenv import load_dotenv
 from scripts.ops.storage.spaces import SpacesClient
 
@@ -128,12 +129,6 @@ def _upload_file(spaces: SpacesClient, file_path: str, key: str, acl: str) -> in
 
 
 def _list_objects_with_prefix(spaces: SpacesClient, prefix: str) -> list[dict]:
-    """
-    Returns objects as dicts with at least:
-      - Key (str)
-      - LastModified (datetime, tz-aware)
-      - Size (int)
-    """
     objs: list[dict] = []
     continuation = None
 
@@ -142,7 +137,15 @@ def _list_objects_with_prefix(spaces: SpacesClient, prefix: str) -> list[dict]:
         if continuation:
             kwargs["ContinuationToken"] = continuation
 
-        resp = spaces.client.list_objects_v2(**kwargs)
+        try:
+            resp = spaces.client.list_objects_v2(**kwargs)
+        except botocore.exceptions.ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            # Treat “not found” / listing problems as “no objects”
+            if code in {"NoSuchKey", "NoSuchBucket"}:
+                return []
+            raise
+
         for obj in resp.get("Contents", []) or []:
             k = obj.get("Key")
             lm = obj.get("LastModified")

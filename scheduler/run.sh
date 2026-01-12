@@ -64,19 +64,19 @@ cd /app/scrapy
 # PIPELINE: Algonquin
 # ------------------------------
 substep "Pipeline: Algonquin — Capacity"
-run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+# run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 
 substep "Pipeline: Algonquin — Notices"
-run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
+# run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
 
 # ------------------------------
 # PIPELINE: <ADD NEW PIPELINE HERE>
 # ------------------------------
 # substep "Pipeline: XYZ — Capacity"
-# run_cmd scrapy crawl xyz_capacity -s LOG_LEVEL=INFO
+run_cmd scrapy crawl xyz_capacity -s LOG_LEVEL=INFO
 #
 # substep "Pipeline: XYZ — Notices"
-# run_cmd scrapy crawl xyz_notices -s LOG_LEVEL=INFO
+run_cmd scrapy crawl xyz_notices -s LOG_LEVEL=INFO
 
 echo "[STEP 1] Scrapy ingestion completed"
 
@@ -128,7 +128,7 @@ echo "[STEP 4] NOAA ingestion completed"
 
 step "[STEP 5] Ops: Daily ingestion report"
 
-run_cmd poetry run python scripts/ops/ingest/daily_ingestion_report.py \
+run_cmd python scripts/ops/ingest/daily_ingestion_report.py \
   --start-date "${START_DATE}" \
   --end-date "${END_DATE}"
 
@@ -139,7 +139,7 @@ echo "[STEP 5] Daily ingestion report completed"
 # ============================================================
 echo "[STEP 6] Backup Mongodb to Digital Ocean Spaces"
 
-run_cmd python -m scripts.ops.backup.mongo_backup --retention-days 7
+run_cmd python scripts/ops/backup/mongo_backup.py --retention-days 7
 
 echo "[STEP 6] Backup Mongodb completed"
 # ============================================================
