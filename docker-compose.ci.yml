@@ -1,6 +1,7 @@
 version: "3.7"
 
-worker:
+services:
+  workers:
     build:
       context: .
     image: ghcr.io/mosesmc52/gas-balance-risk:${TAG:-latest}
