@@ -20,10 +20,11 @@ jobs:
       DO_REGION: nyc3
       DO_SIZE: s-1vcpu-1gb
       DO_IMAGE: ubuntu-22-04-x64
-      DO_VPC_UUID: ""
+      DO_VPC_UUID: ${{ vars.DO_VPC_UUID }}
 
       # Tag to help find/clean droplets
       DO_TAG: ephemeral-daily-run
+      DO_APP_TAG: app-runners
 
       # The container image you want to run
       # Change this to your actual package name in GHCR
@@ -55,7 +56,6 @@ jobs:
 
           # Your job secrets/vars (example set; adjust to your app)
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
 
           SPACES_KEY: ${{ secrets.SPACES_KEY }}
           SPACES_SECRET: ${{ secrets.SPACES_SECRET }}
@@ -64,6 +64,10 @@ jobs:
           AWS_SES_SECRET_ACCESS_KEY: ${{ secrets.AWS_SES_SECRET_ACCESS_KEY }}
           TO_ADDRESSES: ${{ secrets.TO_ADDRESSES }}
           FROM_ADDRESS: ${{ secrets.FROM_ADDRESS }}
+
+          MONGO_HOST_PRIVATE: ${{ vars.MONGO_HOST_PRIVATE }}
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASS: ${{ secrets.MONGO_PASS }}
 
           MONGO_DB: ${{ vars.MONGO_DB }}
           SPLASH_URL: ${{ vars.SPLASH_URL }}
@@ -102,7 +106,7 @@ jobs:
               content: |
                 TZ=${TZ}
                 EIA_API_KEY=${EIA_API_KEY}
-                MONGO_URI=${MONGO_URI}
+                MONGO_URI=mongodb://${MONGO_USER}:${MONGO_PASS}@${MONGO_HOST_PRIVATE}:27017/${MONGO_DB}?authSource=admin
                 MONGO_DB=${MONGO_DB}
                 SPLASH_URL=${SPLASH_URL}
                 SPACES_KEY=${SPACES_KEY}
@@ -165,25 +169,28 @@ jobs:
 
                 echo "Starting Splash..." | tee -a "$LOG"
                 docker run -d --name splash --network "${NET}" \
-                  -p 8050:8050 \
-                  "${SPLASH_IMAGE}" >>"$LOG" 2>&1
+                "${SPLASH_IMAGE}"
 
                 # Wait for Splash to be ready
                 echo "Waiting for Splash readiness..." | tee -a "$LOG"
                 for i in {1..60}; do
-                  if curl -fsS "http://127.0.0.1:8050/_ping" >/dev/null 2>&1; then
+                  if docker run --rm --network "${NET}" curlimages/curl:8.5.0 \
+                       -fsS "http://splash:8050/_ping" >/dev/null 2>&1; then
                     echo "Splash is ready." | tee -a "$LOG"
                     break
                   fi
                   sleep 2
                 done
 
-                if ! curl -fsS "http://127.0.0.1:8050/_ping" >/dev/null 2>&1; then
+                # Final check (fail hard if not ready)
+                if ! docker run --rm --network "${NET}" curlimages/curl:8.5.0 \
+                       -fsS "http://splash:8050/_ping" >/dev/null 2>&1; then
                   echo "Splash did not become ready in time." | tee -a "$LOG"
                   docker logs splash | tail -n 200 | tee -a "$LOG" || true
                   echo "1" > /opt/job/exit_code
                   exit 1
                 fi
+
 
                 # -----------------------
                 # Pull and run job image
@@ -219,6 +226,7 @@ jobs:
               --arg size "${DO_SIZE}" \
               --arg image "${DO_IMAGE}" \
               --arg tag "${DO_TAG}" \
+              --arg app_tag "${DO_APP_TAG}" \
               --arg sshfp "${DO_SSH_KEY_FINGERPRINT}" \
               --arg user_data "$USER_DATA" \
               --arg vpc_uuid "${DO_VPC_UUID}" \
@@ -227,7 +235,7 @@ jobs:
                 region: $region,
                 size: $size,
                 image: $image,
-                tags: [$tag],
+                tags: [$tag, $app_tag],
                 ssh_keys: [$sshfp],
                 user_data: $user_data,
                 monitoring: true,
@@ -240,6 +248,7 @@ jobs:
               --arg size "${DO_SIZE}" \
               --arg image "${DO_IMAGE}" \
               --arg tag "${DO_TAG}" \
+              --arg app_tag "${DO_APP_TAG}" \
               --arg sshfp "${DO_SSH_KEY_FINGERPRINT}" \
               --arg user_data "$USER_DATA" \
               '{
@@ -247,7 +256,7 @@ jobs:
                 region: $region,
                 size: $size,
                 image: $image,
-                tags: [$tag],
+                tags: [$tag, $app_tag],
                 ssh_keys: [$sshfp],
                 user_data: $user_data,
                 monitoring: true
