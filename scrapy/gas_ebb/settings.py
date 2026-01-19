@@ -113,7 +113,7 @@ FEED_EXPORT_ENCODING = "utf-8"
 
 # FEED_URI = "%s/data/%%(name)s/%%(time)s.json" % ROOT_PATH
 # FEED_FORMAT = "csv"
-TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+# TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DATABASE = os.getenv("MONGO_DB")
