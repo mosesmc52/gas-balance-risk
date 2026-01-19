@@ -264,22 +264,38 @@ jobs:
 
 
 
-      - name: Wait for SSH port 22
+      - name: Wait for droplet active + get public IP
+        id: ip
         env:
-          IP: ${{ steps.ip.outputs.ip }}
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y netcat-openbsd
+          ID="${{ steps.create.outputs.droplet_id }}"
+
           for i in {1..120}; do
-            if nc -z -w2 "${IP}" 22; then
-              echo "SSH port is open."
+            D="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}")"
+
+            STATUS="$(echo "$D" | jq -r '.droplet.status // empty')"
+
+            # Prefer public IPv4 if present
+            IP_PUBLIC="$(echo "$D" | jq -r '.droplet.networks.v4[]? | select(.type=="public") | .ip_address' | head -n1)"
+            IP_PRIVATE="$(echo "$D" | jq -r '.droplet.networks.v4[]? | select(.type=="private") | .ip_address' | head -n1)"
+
+            echo "poll=${i} status=${STATUS:-?} public_ip=${IP_PUBLIC:-} private_ip=${IP_PRIVATE:-}"
+
+            if [ "${STATUS}" = "active" ] && [ -n "${IP_PUBLIC}" ]; then
+              echo "ip=${IP_PUBLIC}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Waiting for SSH port 22..."
-            sleep 5
+
+            sleep 10
           done
-          echo "Timed out waiting for SSH port 22."
+
+          echo "Timed out waiting for droplet public IPv4."
+          echo "Last droplet payload:"
+          echo "$D" | jq .
           exit 1
+
 
       - name: Wait for job completion and show logs
         env:
