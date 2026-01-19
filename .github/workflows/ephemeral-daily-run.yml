@@ -88,7 +88,7 @@ jobs:
           # - runs the container once, logs to /var/log/job.log, writes exit code to /opt/job/exit_code
           # - powers off at end
           echo "Cloud-init length: ${#USER_DATA}"
-          USER_DATA=$(cat <<'CLOUD'
+          USER_DATA=$(cat <<CLOUD
           #cloud-config
           package_update: true
           packages:
@@ -160,9 +160,9 @@ jobs:
                 SPLASH_IMAGE="scrapinghub/splash:3.5"
                 NET="jobnet"
 
-                docker network inspect "${NET}" >/dev/null 2>&1 || docker network create "${NET}" >>"$LOG" 2>&1
+                docker network inspect "\${NET}" >/dev/null 2>&1 || docker network create "\${NET}" >>"\$LOG" 2>&1
 
-                echo "Pulling Splash image: ${SPLASH_IMAGE}" | tee -a "$LOG"
+                echo "Pulling Splash image: \${SPLASH_IMAGE}" | tee -a "\$LOG"
                 docker pull "${SPLASH_IMAGE}" >>"$LOG" 2>&1
 
                 # Remove any prior splash container if exists
@@ -206,7 +206,7 @@ jobs:
                   --env-file /opt/job/env \
                   -e SPLASH_URL="http://splash:8050" \
                   ${JOB_IMAGE} /app/run.sh 2>&1 | tee -a "\$LOG"
-                EXIT_CODE=${PIPESTATUS[0]}
+                EXIT_CODE=\${PIPESTATUS[0]}
                 set -e
 
                 # Optional: stop splash (not required since droplet will be destroyed)
@@ -218,7 +218,7 @@ jobs:
             - [ bash, -lc, "/opt/job/run.sh" ]
           CLOUD
           )
-
+          echo "Cloud-init length: ${#USER_DATA}"
           # Create droplet body. Optionally include VPC UUID if set.
           if [ -n "${DO_VPC_UUID}" ]; then
             BODY=$(jq -n \
