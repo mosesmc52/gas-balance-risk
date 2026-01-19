@@ -37,6 +37,29 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
+      - name: Resolve DO SSH key id
+        id: sshkey
+        env:
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+          DO_SSH_KEY_FINGERPRINT: ${{ secrets.DO_SSH_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+
+          KEYS="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/account/keys")"
+          # Try by fingerprint (preferred)
+          KEY_ID="$(echo "$KEYS" | jq -r --arg fp "${DO_SSH_KEY_FINGERPRINT}" '.ssh_keys[]? | select(.fingerprint==$fp) | .id' | head -n1)"
+
+          if [ -z "${KEY_ID}" ] || [ "${KEY_ID}" = "null" ]; then
+            echo "ERROR: No SSH key found in DigitalOcean account matching fingerprint: ${DO_SSH_KEY_FINGERPRINT}"
+            echo "Available keys:"
+            echo "$KEYS" | jq -r '.ssh_keys[] | "\(.name)  id=\(.id)  fingerprint=\(.fingerprint)"'
+            exit 1
+          fi
+
+          echo "Resolved DO SSH key id: ${KEY_ID}"
+          echo "ssh_key_id=${KEY_ID}" >> "$GITHUB_OUTPUT"
+
+
       - name: Create droplet (cloud-init runs the job)
         id: create
         env:
@@ -209,7 +232,7 @@ jobs:
               --arg image "${DO_IMAGE}" \
               --arg tag "${DO_TAG}" \
               --arg app_tag "${DO_APP_TAG}" \
-              --arg sshfp "${DO_SSH_KEY_FINGERPRINT}" \
+              --argjson sshid "${{ steps.sshkey.outputs.ssh_key_id }}" \
               --arg user_data "$USER_DATA" \
               --arg vpc_uuid "${DO_VPC_UUID}" \
               '{
@@ -218,7 +241,7 @@ jobs:
                 size: $size,
                 image: $image,
                 tags: [$tag, $app_tag],
-                ssh_keys: [$sshfp],
+                ssh_keys: [$sshid],
                 user_data: $user_data,
                 monitoring: true,
                 vpc_uuid: $vpc_uuid
@@ -239,7 +262,7 @@ jobs:
                 size: $size,
                 image: $image,
                 tags: [$tag, $app_tag],
-                ssh_keys: [$sshfp],
+                ssh_keys: [$sshid],
                 user_data: $user_data,
                 monitoring: true
               }')
@@ -261,6 +284,7 @@ jobs:
 
           echo "droplet_id=$DROPLET_ID" >> "$GITHUB_OUTPUT"
           echo "droplet_name=$NAME" >> "$GITHUB_OUTPUT"
+
 
 
       - name: Verify droplet has expected SSH key
