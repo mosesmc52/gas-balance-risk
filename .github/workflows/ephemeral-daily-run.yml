@@ -263,6 +263,25 @@ jobs:
           echo "droplet_name=$NAME" >> "$GITHUB_OUTPUT"
 
 
+      - name: Verify droplet has expected SSH key
+        env:
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+          DO_SSH_KEY_FINGERPRINT: ${{ secrets.DO_SSH_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          ID="${{ steps.create.outputs.droplet_id }}"
+
+          D="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}")"
+          echo "$D" | jq -r '.droplet.ssh_keys'
+
+          if echo "$D" | jq -e --arg fp "${DO_SSH_KEY_FINGERPRINT}" '.droplet.ssh_keys[]? | select(.fingerprint==$fp)' >/dev/null; then
+            echo "OK: Droplet has expected SSH key fingerprint."
+          else
+            echo "ERROR: Droplet does NOT include expected SSH key fingerprint: ${DO_SSH_KEY_FINGERPRINT}"
+            echo "This means ssh_keys attachment failed or fingerprint is wrong."
+            exit 1
+          fi
+
 
       - name: Wait for droplet active + get public IP
         id: ip
