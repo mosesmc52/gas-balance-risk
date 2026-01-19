@@ -37,13 +37,6 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Verify DO auth (safe)
-        env:
-          DO_TOKEN: ${{ secrets.DO_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" https://api.digitalocean.com/v2/account | jq .
-
       - name: Create droplet (cloud-init runs the job)
         id: create
         env:
@@ -54,7 +47,7 @@ jobs:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
 
-          # Your job secrets/vars (example set; adjust to your app)
+          # Your job secrets/vars
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
 
           SPACES_KEY: ${{ secrets.SPACES_KEY }}
@@ -81,13 +74,6 @@ jobs:
 
           NAME="job-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          # Build cloud-init user_data. This script:
-          # - installs docker
-          # - (optionally) logs into ghcr.io for private images
-          # - writes /opt/job/env from values injected here
-          # - runs the container once, logs to /var/log/job.log, writes exit code to /opt/job/exit_code
-          # - powers off at end
-          echo "Cloud-init length: ${#USER_DATA}"
           USER_DATA=$(cat <<CLOUD
           #cloud-config
           package_update: true
@@ -126,99 +112,94 @@ jobs:
               content: |
                 #!/usr/bin/env bash
                 set -euo pipefail
+
                 LOG=/var/log/job.log
                 echo "=== Job start: \$(date -Is) ===" | tee -a "\$LOG"
 
                 echo "---- /opt/job/env (redacted) ----" | tee -a "\$LOG"
-                sed -E 's/(KEY|TOKEN|SECRET|PASSWORD)=.*/\1=REDACTED/g' /opt/job/env | tee -a "\$LOG"
+                sed -E 's/(KEY|TOKEN|SECRET|PASSWORD)=.*/\\1=REDACTED/g' /opt/job/env | tee -a "\$LOG"
 
                 # Install Docker
                 curl -fsSL https://get.docker.com | sh >>"\$LOG" 2>&1
                 systemctl enable --now docker >>"\$LOG" 2>&1
 
+                # Load GHCR creds if present
                 if [ -f /opt/job/ghcr.env ]; then
                   set -a
                   . /opt/job/ghcr.env
                   set +a
                 fi
 
-                # If GHCR creds are provided, login (needed for private images).
-                if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
-                  echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin >>"\$LOG" 2>&1
+                # Login to GHCR if creds are provided (needed for private images)
+                if [ -n "\${GHCR_USERNAME:-}" ] && [ -n "\${GHCR_TOKEN:-}" ]; then
+                  echo "\${GHCR_TOKEN}" | docker login ghcr.io -u "\${GHCR_USERNAME}" --password-stdin >>"\$LOG" 2>&1
                 else
                   echo "GHCR creds not provided; assuming image is public." | tee -a "\$LOG"
                 fi
 
-                # Pull and run
                 # -----------------------
                 # Start Splash sidecar
                 # -----------------------
-                # NOTE: If you do NOT need Splash for a given run, you can disable it by setting
-                # SPLASH_ENABLE=0 in /opt/job/env and wrapping this block with a conditional.
-                #
-                # We'll always start it here (simple + reliable).
                 SPLASH_IMAGE="scrapinghub/splash:3.5"
                 NET="jobnet"
 
                 docker network inspect "\${NET}" >/dev/null 2>&1 || docker network create "\${NET}" >>"\$LOG" 2>&1
 
                 echo "Pulling Splash image: \${SPLASH_IMAGE}" | tee -a "\$LOG"
-                docker pull "${SPLASH_IMAGE}" >>"$LOG" 2>&1
+                docker pull "\${SPLASH_IMAGE}" >>"\$LOG" 2>&1
 
-                # Remove any prior splash container if exists
                 docker rm -f splash >/dev/null 2>&1 || true
 
-                echo "Starting Splash..." | tee -a "$LOG"
-                docker run -d --name splash --network "${NET}" \
-                "${SPLASH_IMAGE}"
+                echo "Starting Splash..." | tee -a "\$LOG"
+                docker run -d --name splash --network "\${NET}" "\${SPLASH_IMAGE}" >>"\$LOG" 2>&1
 
-                # Wait for Splash to be ready
-                echo "Waiting for Splash readiness..." | tee -a "$LOG"
+                echo "Waiting for Splash readiness..." | tee -a "\$LOG"
                 for i in {1..60}; do
-                  if docker run --rm --network "${NET}" curlimages/curl:8.5.0 \
+                  if docker run --rm --network "\${NET}" curlimages/curl:8.5.0 \
                        -fsS "http://splash:8050/_ping" >/dev/null 2>&1; then
-                    echo "Splash is ready." | tee -a "$LOG"
+                    echo "Splash is ready." | tee -a "\$LOG"
                     break
                   fi
                   sleep 2
                 done
 
-                # Final check (fail hard if not ready)
-                if ! docker run --rm --network "${NET}" curlimages/curl:8.5.0 \
+                if ! docker run --rm --network "\${NET}" curlimages/curl:8.5.0 \
                        -fsS "http://splash:8050/_ping" >/dev/null 2>&1; then
-                  echo "Splash did not become ready in time." | tee -a "$LOG"
-                  docker logs splash | tail -n 200 | tee -a "$LOG" || true
+                  echo "Splash did not become ready in time." | tee -a "\$LOG"
+                  docker logs splash | tail -n 200 | tee -a "\$LOG" || true
                   echo "1" > /opt/job/exit_code
+                  poweroff || true
                   exit 1
                 fi
-
 
                 # -----------------------
                 # Pull and run job image
                 # -----------------------
-                echo "Pulling job image: ${JOB_IMAGE}" | tee -a "$LOG"
-                docker pull ${JOB_IMAGE} >>"\$LOG" 2>&1
+                echo "Pulling job image: ${JOB_IMAGE}" | tee -a "\$LOG"
+                docker pull "${JOB_IMAGE}" >>"\$LOG" 2>&1
 
-                # Force SPLASH_URL for the job container to the sidecar service name on jobnet.
-                # This overrides anything in /opt/job/env.
                 set +e
-                docker run --rm --network "${NET}" \
+                docker run --rm --network "\${NET}" \
                   --env-file /opt/job/env \
                   -e SPLASH_URL="http://splash:8050" \
-                  ${JOB_IMAGE} /app/run.sh 2>&1 | tee -a "\$LOG"
+                  "${JOB_IMAGE}" /app/run.sh 2>&1 | tee -a "\$LOG"
                 EXIT_CODE=\${PIPESTATUS[0]}
                 set -e
 
-                # Optional: stop splash (not required since droplet will be destroyed)
-                docker rm -f splash >>"$LOG" 2>&1 || true
+                docker rm -f splash >>"\$LOG" 2>&1 || true
 
+                echo "\${EXIT_CODE}" > /opt/job/exit_code
+                echo "=== Job end: \$(date -Is) exit=\${EXIT_CODE} ===" | tee -a "\$LOG"
 
+                poweroff || true
 
           runcmd:
             - [ bash, -lc, "/opt/job/run.sh" ]
           CLOUD
           )
+
           echo "Cloud-init length: ${#USER_DATA}"
+
           # Create droplet body. Optionally include VPC UUID if set.
           if [ -n "${DO_VPC_UUID}" ]; then
             BODY=$(jq -n \
@@ -281,29 +262,7 @@ jobs:
           echo "droplet_id=$DROPLET_ID" >> "$GITHUB_OUTPUT"
           echo "droplet_name=$NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for droplet active + get public IP
-        id: ip
-        env:
-          DO_TOKEN: ${{ secrets.DO_TOKEN }}
-        run: |
-          set -euo pipefail
-          ID="${{ steps.create.outputs.droplet_id }}"
 
-          for i in {1..90}; do
-            D=$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}")
-            STATUS=$(echo "$D" | jq -r '.droplet.status')
-            IP=$(echo "$D" | jq -r '.droplet.networks.v4[]? | select(.type=="public") | .ip_address' | head -n1)
-
-            echo "status=${STATUS} ip=${IP}"
-            if [ "${STATUS}" = "active" ] && [ -n "${IP}" ]; then
-              echo "ip=${IP}" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            sleep 10
-          done
-
-          echo "Timed out waiting for droplet."
-          exit 1
 
       - name: Wait for SSH port 22
         env:
