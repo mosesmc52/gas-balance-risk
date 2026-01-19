@@ -72,7 +72,7 @@ jobs:
           MONGO_DB: ${{ vars.MONGO_DB }}
           SPLASH_URL: ${{ vars.SPLASH_URL }}
           SPACES_BUCKET: ${{ vars.SPACES_BUCKET }}
-          SPACES_ENDPOINT: ${{ vars.SPACES_BUCKET }}
+          SPACES_ENDPOINT: ${{ vars.SPACES_ENDPOINT }}
           SPACES_REGION: ${{ vars.SPACES_REGION }}
           AWS_SES_REGION_NAME: ${{ vars.AWS_SES_REGION_NAME }}
 
@@ -87,7 +87,8 @@ jobs:
           # - writes /opt/job/env from values injected here
           # - runs the container once, logs to /var/log/job.log, writes exit code to /opt/job/exit_code
           # - powers off at end
-          USER_DATA=$(cat <<CLOUD
+          echo "Cloud-init length: ${#USER_DATA}"
+          USER_DATA=$(cat <<'CLOUD'
           #cloud-config
           package_update: true
           packages:
