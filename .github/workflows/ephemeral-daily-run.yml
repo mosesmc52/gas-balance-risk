@@ -224,6 +224,7 @@ jobs:
           echo "Cloud-init length: ${#USER_DATA}"
 
           # Create droplet body. Optionally include VPC UUID if set.
+          # Create droplet body. Optionally include VPC UUID if set.
           if [ -n "${DO_VPC_UUID}" ]; then
             BODY=$(jq -n \
               --arg name "$NAME" \
@@ -232,8 +233,8 @@ jobs:
               --arg image "${DO_IMAGE}" \
               --arg tag "${DO_TAG}" \
               --arg app_tag "${DO_APP_TAG}" \
-              --argjson sshid "${{ steps.sshkey.outputs.ssh_key_id }}" \
               --arg user_data "$USER_DATA" \
+              --argjson sshid "${{ steps.sshkey.outputs.ssh_key_id }}" \
               --arg vpc_uuid "${DO_VPC_UUID}" \
               '{
                 name: $name,
@@ -254,8 +255,8 @@ jobs:
               --arg image "${DO_IMAGE}" \
               --arg tag "${DO_TAG}" \
               --arg app_tag "${DO_APP_TAG}" \
-              --arg sshfp "${DO_SSH_KEY_FINGERPRINT}" \
               --arg user_data "$USER_DATA" \
+              --argjson sshid "${{ steps.sshkey.outputs.ssh_key_id }}" \
               '{
                 name: $name,
                 region: $region,
@@ -267,6 +268,7 @@ jobs:
                 monitoring: true
               }')
           fi
+
 
           RESP=$(curl -sS -X POST \
             -H "Authorization: Bearer ${DO_TOKEN}" \
@@ -354,7 +356,7 @@ jobs:
             # --- Write SSH key ---
             mkdir -p ~/.ssh
             chmod 700 ~/.ssh
-            echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+            printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
             chmod 600 ~/.ssh/id_ed25519
 
             # Validate key format (fails fast if malformed)
