@@ -454,10 +454,15 @@ jobs:
           DO_TOKEN: ${{ secrets.DO_TOKEN }}
         run: |
           set -euo pipefail
+
           ID="${{ steps.create.outputs.droplet_id }}"
           if [ -z "${ID}" ] || [ "${ID}" = "null" ]; then
             echo "No droplet id found; nothing to destroy."
             exit 0
           fi
+
           echo "Destroying droplet ${ID}..."
-          curl -sS -X D
+          curl -sS -X DELETE \
+            -H "Authorization: Bearer ${DO_TOKEN}" \
+            "${DO_API}/droplets/${ID}" \
+            | cat || true
