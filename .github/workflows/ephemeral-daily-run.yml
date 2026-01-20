@@ -59,6 +59,13 @@ jobs:
           echo "Resolved DO SSH key id: ${KEY_ID}"
           echo "ssh_key_id=${KEY_ID}" >> "$GITHUB_OUTPUT"
 
+      - name: List DO SSH keys (debug)
+        env:
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/account/keys" | jq -r '.ssh_keys[] | "\(.name)  id=\(.id)  fp=\(.fingerprint)"'
+
 
       - name: Create droplet (cloud-init runs the job)
         id: create
