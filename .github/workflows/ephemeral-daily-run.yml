@@ -206,7 +206,7 @@ jobs:
                 docker run --rm --network "\${NET}" \
                   --env-file /opt/job/env \
                   -e SPLASH_URL="http://splash:8050" \
-                  "${JOB_IMAGE}" /app/run.sh 2>&1 | tee -a "\$LOG"
+                  "${JOB_IMAGE}" /app/scheduler/run.sh 2>&1 | tee -a "\$LOG"
                 EXIT_CODE=\${PIPESTATUS[0]}
                 set -e
 
