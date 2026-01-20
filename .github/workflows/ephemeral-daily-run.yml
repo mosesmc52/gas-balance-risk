@@ -106,54 +106,6 @@ jobs:
             - curl
 
           write_files:
-            - path: /opt/job/mongo_check.sh
-              permissions: "0700"
-              content: |
-                #!/usr/bin/env bash
-                set -euo pipefail
-
-                LOG=/var/log/job.log
-                echo "=== Mongo preflight check ===" | tee -a "$LOG"
-
-                # Load env
-                set -a
-                . /opt/job/env
-                set +a
-
-                if [ -z "${MONGO_URI:-}" ]; then
-                  echo "ERROR: MONGO_URI not set" | tee -a "$LOG"
-                  exit 2
-                fi
-
-                # Parse host:port
-                HP="$(python3 - <<'PY'
-                import os, re
-                uri=os.environ["MONGO_URI"]
-                m=re.search(r"mongodb(?:\+srv)?:\/\/[^@]+@([^\/\?]+)", uri)
-                print(m.group(1) if m else "")
-                PY
-                )"
-
-                if [ -z "$HP" ]; then
-                  echo "ERROR: Failed to parse host from MONGO_URI" | tee -a "$LOG"
-                  exit 2
-                fi
-
-                HOST="${HP%:*}"
-                PORT="${HP#*:}"
-                [ "$HOST" = "$PORT" ] && PORT=27017
-
-                echo "Mongo target: $HOST:$PORT" | tee -a "$LOG"
-
-                echo "Checking TCP reachability..." | tee -a "$LOG"
-                docker run --rm --network host curlimages/curl:8.5.0 \
-                  telnet://${HOST}:${PORT} >/dev/null 2>&1 || true
-
-                echo "Running authenticated mongosh ping..." | tee -a "$LOG"
-                docker run --rm --network host mongo:6 \
-                  mongosh "$MONGO_URI" --quiet --eval 'db.runCommand({ ping: 1 })' >>"$LOG" 2>&1
-
-                echo "OK: Mongo is reachable and authenticated" | tee -a "$LOG"
             - path: /opt/job/ghcr.env
               permissions: "0600"
               content: |
@@ -269,7 +221,6 @@ jobs:
                 poweroff || true
 
           runcmd:
-            - [ bash, -lc, "/opt/job/mongo_check.sh" ]
             - [ bash, -lc, "/opt/job/run.sh" ]
           CLOUD
           )
