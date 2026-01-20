@@ -59,14 +59,6 @@ jobs:
           echo "Resolved DO SSH key id: ${KEY_ID}"
           echo "ssh_key_id=${KEY_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: List DO SSH keys (debug)
-        env:
-          DO_TOKEN: ${{ secrets.DO_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/account/keys" | jq -r '.ssh_keys[] | "\(.name)  id=\(.id)  fp=\(.fingerprint)"'
-
-
       - name: Create droplet (cloud-init runs the job)
         id: create
         env:
@@ -275,7 +267,12 @@ jobs:
                 monitoring: true
               }')
           fi
-
+          echo "Droplet create BODY (redacted user_data):"
+          echo "$BODY" | jq 'del(.user_data)'
+          echo "$BODY" | jq -e '.ssh_keys | type=="array" and length>0' >/dev/null || {
+            echo "ERROR: BODY.ssh_keys missing/empty. This is why droplet.ssh_keys is null."
+            exit 1
+          }
 
           RESP=$(curl -sS -X POST \
             -H "Authorization: Bearer ${DO_TOKEN}" \
