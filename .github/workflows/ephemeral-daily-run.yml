@@ -291,48 +291,6 @@ jobs:
           echo "droplet_id=$DROPLET_ID" >> "$GITHUB_OUTPUT"
           echo "droplet_name=$NAME" >> "$GITHUB_OUTPUT"
 
-
-
-      - name: Verify droplet has expected SSH key (poll)
-        env:
-          DO_TOKEN: ${{ secrets.DO_TOKEN }}
-          DO_SSH_KEY_FINGERPRINT: ${{ secrets.DO_SSH_KEY_FINGERPRINT }}
-        run: |
-          set -euo pipefail
-          ID="${{ steps.create.outputs.droplet_id }}"
-
-          echo "Expecting SSH fingerprint: ${DO_SSH_KEY_FINGERPRINT}"
-
-          for i in {1..24}; do
-            D="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}")"
-
-            STATUS="$(echo "$D" | jq -r '.droplet.status // empty')"
-            SSHK="$(echo "$D" | jq -c '.droplet.ssh_keys // null')"
-
-            echo "poll=${i} status=${STATUS:-?} ssh_keys=${SSHK}"
-
-            # If ssh_keys is present, verify fingerprint
-            if echo "$D" | jq -e '.droplet.ssh_keys != null' >/dev/null 2>&1; then
-              if echo "$D" | jq -e --arg fp "${DO_SSH_KEY_FINGERPRINT}" '.droplet.ssh_keys[]? | select(.fingerprint==$fp)' >/dev/null; then
-                echo "OK: Droplet has expected SSH key fingerprint."
-                exit 0
-              fi
-
-              echo "ERROR: Droplet ssh_keys is present but does NOT include expected fingerprint."
-              echo "$D" | jq -r '.droplet.ssh_keys'
-              exit 1
-            fi
-
-            sleep 5
-          done
-
-          echo "ERROR: droplet.ssh_keys stayed null after polling."
-          echo "Last droplet payload:"
-          echo "$D" | jq .
-          exit 1
-
-
-
       - name: Wait for droplet active + get public IP
         id: ip
         env:
@@ -363,6 +321,36 @@ jobs:
           echo "Timed out waiting for droplet public IPv4."
           echo "Last droplet payload:"
           echo "$D" | jq .
+          exit 1
+
+      - name: Wait for SSH auth (probe key login)
+        env:
+          IP: ${{ steps.ip.outputs.ip }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -i ~/.ssh/id_ed25519"
+
+          for i in {1..60}; do
+            for u in ubuntu root; do
+              if ssh ${SSH_OPTS} "${u}@${IP}" 'echo ok' >/dev/null 2>&1; then
+                echo "SSH auth OK as user=${u}"
+                echo "ssh_user=${u}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
+            echo "Waiting for SSH auth to succeed... (${i}/60)"
+            sleep 5
+          done
+
+          echo "ERROR: SSH auth never succeeded for ubuntu or root."
           exit 1
 
 
