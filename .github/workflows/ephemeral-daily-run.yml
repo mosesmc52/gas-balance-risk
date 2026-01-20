@@ -16,26 +16,32 @@ jobs:
     env:
       DO_API: https://api.digitalocean.com/v2
 
-      # Droplet settings (non-secret; best as repo Variables if you prefer)
+      # Droplet settings
       DO_REGION: nyc3
-      DO_SIZE: s-1vcpu-1gb
+      DO_SIZE: s-1vcpu-2gb            # bump to 2GB to reduce Docker pull/daemon flakiness
       DO_IMAGE: ubuntu-22-04-x64
       DO_VPC_UUID: ${{ vars.DO_VPC_UUID }}
 
-      # Tag to help find/clean droplets
+      # Tags
       DO_TAG: ephemeral-daily-run
       DO_APP_TAG: app-runners
 
-      # The container image you want to run
-      # Change this to your actual package name in GHCR
+      # Job image
       JOB_IMAGE: ghcr.io/mosesmc52/gas-balance-risk:latest
 
       # Runtime settings
       TZ: ${{ vars.TZ }}
 
     steps:
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq + netcat
+        run: sudo apt-get update && sudo apt-get install -y jq netcat-openbsd
+
+      - name: Verify DO auth (safe)
+        env:
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/account" | jq .
 
       - name: Resolve DO SSH key id
         id: sshkey
@@ -46,7 +52,6 @@ jobs:
           set -euo pipefail
 
           KEYS="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/account/keys")"
-          # Try by fingerprint (preferred)
           KEY_ID="$(echo "$KEYS" | jq -r --arg fp "${DO_SSH_KEY_FINGERPRINT}" '.ssh_keys[]? | select(.fingerprint==$fp) | .id' | head -n1)"
 
           if [ -z "${KEY_ID}" ] || [ "${KEY_ID}" = "null" ]; then
@@ -63,15 +68,13 @@ jobs:
         id: create
         env:
           DO_TOKEN: ${{ secrets.DO_TOKEN }}
-          DO_SSH_KEY_FINGERPRINT: ${{ secrets.DO_SSH_KEY_FINGERPRINT }}
 
           # Only required if your GHCR image is private
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
 
-          # Your job secrets/vars
+          # App secrets/vars
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
-
           SPACES_KEY: ${{ secrets.SPACES_KEY }}
           SPACES_SECRET: ${{ secrets.SPACES_SECRET }}
 
@@ -93,7 +96,6 @@ jobs:
 
         run: |
           set -euo pipefail
-
           NAME="job-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           USER_DATA=$(cat <<CLOUD
@@ -136,23 +138,22 @@ jobs:
                 set -euo pipefail
 
                 LOG=/var/log/job.log
+                mkdir -p /opt/job
                 echo "=== Job start: \$(date -Is) ===" | tee -a "\$LOG"
 
                 echo "---- /opt/job/env (redacted) ----" | tee -a "\$LOG"
                 sed -E 's/(KEY|TOKEN|SECRET|PASSWORD)=.*/\\1=REDACTED/g' /opt/job/env | tee -a "\$LOG"
 
-                # Install Docker
+                echo "Installing Docker..." | tee -a "\$LOG"
                 curl -fsSL https://get.docker.com | sh >>"\$LOG" 2>&1
                 systemctl enable --now docker >>"\$LOG" 2>&1
 
-                # Load GHCR creds if present
                 if [ -f /opt/job/ghcr.env ]; then
                   set -a
                   . /opt/job/ghcr.env
                   set +a
                 fi
 
-                # Login to GHCR if creds are provided (needed for private images)
                 if [ -n "\${GHCR_USERNAME:-}" ] && [ -n "\${GHCR_TOKEN:-}" ]; then
                   echo "\${GHCR_TOKEN}" | docker login ghcr.io -u "\${GHCR_USERNAME}" --password-stdin >>"\$LOG" 2>&1
                 else
@@ -171,7 +172,6 @@ jobs:
                 docker pull "\${SPLASH_IMAGE}" >>"\$LOG" 2>&1
 
                 docker rm -f splash >/dev/null 2>&1 || true
-
                 echo "Starting Splash..." | tee -a "\$LOG"
                 docker run -d --name splash --network "\${NET}" "\${SPLASH_IMAGE}" >>"\$LOG" 2>&1
 
@@ -190,6 +190,8 @@ jobs:
                   echo "Splash did not become ready in time." | tee -a "\$LOG"
                   docker logs splash | tail -n 200 | tee -a "\$LOG" || true
                   echo "1" > /opt/job/exit_code
+                  sync
+                  sleep 120
                   poweroff || true
                   exit 1
                 fi
@@ -212,7 +214,10 @@ jobs:
 
                 echo "\${EXIT_CODE}" > /opt/job/exit_code
                 echo "=== Job end: \$(date -Is) exit=\${EXIT_CODE} ===" | tee -a "\$LOG"
+                sync
 
+                # Leave time for the runner to SSH in and fetch logs/exit code.
+                sleep 180
                 poweroff || true
 
           runcmd:
@@ -220,11 +225,8 @@ jobs:
           CLOUD
           )
 
-          echo "Cloud-init length: ${#USER_DATA}"
-
-          # Create droplet body. Optionally include VPC UUID if set.
-          # Create droplet body. Optionally include VPC UUID if set.
-          if [ -n "${DO_VPC_UUID}" ]; then
+          # Create droplet body. Include VPC UUID only if set and not "null".
+          if [ -n "${DO_VPC_UUID//[[:space:]]/}" ] && [ "${DO_VPC_UUID}" != "null" ]; then
             BODY=$(jq -n \
               --arg name "$NAME" \
               --arg region "${DO_REGION}" \
@@ -267,10 +269,12 @@ jobs:
                 monitoring: true
               }')
           fi
+
           echo "Droplet create BODY (redacted user_data):"
           echo "$BODY" | jq 'del(.user_data)'
+
           echo "$BODY" | jq -e '.ssh_keys | type=="array" and length>0' >/dev/null || {
-            echo "ERROR: BODY.ssh_keys missing/empty. This is why droplet.ssh_keys is null."
+            echo "ERROR: BODY.ssh_keys missing/empty."
             exit 1
           }
 
@@ -280,11 +284,18 @@ jobs:
             "${DO_API}/droplets" \
             -d "${BODY}")
 
+          # Fail fast on DO API error format
+          if echo "$RESP" | jq -e '.id? and .message?' >/dev/null 2>&1; then
+            echo "ERROR: DigitalOcean API error:"
+            echo "$RESP" | jq .
+            exit 1
+          fi
+
           echo "$RESP" | jq .
 
           DROPLET_ID=$(echo "$RESP" | jq -r '.droplet.id')
           if [ -z "$DROPLET_ID" ] || [ "$DROPLET_ID" = "null" ]; then
-            echo "Failed to create droplet."
+            echo "Failed to create droplet (no droplet.id)."
             exit 1
           fi
 
@@ -299,12 +310,9 @@ jobs:
           set -euo pipefail
           ID="${{ steps.create.outputs.droplet_id }}"
 
-          for i in {1..120}; do
+          for i in {1..180}; do
             D="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}")"
-
             STATUS="$(echo "$D" | jq -r '.droplet.status // empty')"
-
-            # Prefer public IPv4 if present
             IP_PUBLIC="$(echo "$D" | jq -r '.droplet.networks.v4[]? | select(.type=="public") | .ip_address' | head -n1)"
             IP_PRIVATE="$(echo "$D" | jq -r '.droplet.networks.v4[]? | select(.type=="private") | .ip_address' | head -n1)"
 
@@ -314,8 +322,7 @@ jobs:
               echo "ip=${IP_PUBLIC}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-
-            sleep 10
+            sleep 5
           done
 
           echo "Timed out waiting for droplet public IPv4."
@@ -328,8 +335,6 @@ jobs:
           IP: ${{ steps.ip.outputs.ip }}
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y netcat-openbsd
-
           if [ -z "${IP}" ]; then
             echo "ERROR: IP output is empty."
             exit 1
@@ -347,110 +352,101 @@ jobs:
           echo "ERROR: SSH port 22 never became reachable on ${IP}"
           exit 1
 
-
-      - name: Wait for SSH auth (probe key login)
-        env:
-          IP: ${{ steps.ip.outputs.ip }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
-
-          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -i ~/.ssh/id_ed25519"
-
-          for i in {1..60}; do
-            for u in ubuntu root; do
-              if ssh ${SSH_OPTS} "${u}@${IP}" 'echo ok' >/dev/null 2>&1; then
-                echo "SSH auth OK as user=${u}"
-                echo "ssh_user=${u}" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            done
-            echo "Waiting for SSH auth to succeed... (${i}/60)"
-            sleep 5
-          done
-
-          echo "ERROR: SSH auth never succeeded for ubuntu or root."
-          exit 1
-
-
       - name: Wait for job completion and show logs
         env:
           IP: ${{ steps.ip.outputs.ip }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+          ID: ${{ steps.create.outputs.droplet_id }}
         run: |
-            set -euo pipefail
-            LOG=""
-            # Runner-side log file (prevents 'LOG: unbound variable' if you add tee later)
-            LOG="/home/runner/job-wait.log"
-            touch "$LOG"
+          set -euo pipefail
 
-            # --- Write SSH key ---
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
-            chmod 600 ~/.ssh/id_ed25519
+          LOG="/home/runner/job-wait.log"
+          touch "$LOG"
 
-            # Validate key format (fails fast if malformed)
-            ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
 
-            SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -i ~/.ssh/id_ed25519"
+          ssh-keygen -y -f ~/.ssh/id_ed25519 >/dev/null
 
-            # --- Determine SSH user (Ubuntu images often use 'ubuntu'; sometimes 'root') ---
-            SSH_USER=""
-            for u in ubuntu root; do
-              if ssh ${SSH_OPTS} "${u}@${IP}" 'echo ok' >/dev/null 2>&1; then
-                SSH_USER="$u"
+          SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -i ~/.ssh/id_ed25519"
+
+          SSH_USER=""
+          for u in ubuntu root; do
+            if ssh ${SSH_OPTS} "${u}@${IP}" 'echo ok' >/dev/null 2>&1; then
+              SSH_USER="$u"
+              break
+            fi
+          done
+
+          if [ -z "${SSH_USER}" ]; then
+            echo "SSH login failed for ubuntu and root." | tee -a "$LOG"
+            exit 1
+          fi
+
+          echo "Using SSH user: ${SSH_USER}" | tee -a "$LOG"
+
+          MAX_LOOPS=120
+          SLEEP_SECS=15
+          TAIL_LINES=50
+
+          echo "Waiting for /opt/job/exit_code (tailing /var/log/job.log every ${SLEEP_SECS}s)..." | tee -a "$LOG"
+
+          for i in $(seq 1 ${MAX_LOOPS}); do
+            if ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'test -f /opt/job/exit_code'; then
+              echo "Job finished signal found: /opt/job/exit_code" | tee -a "$LOG"
+              break
+            fi
+
+            echo "----- Loop ${i}/${MAX_LOOPS}: job still running. Log tail: -----" | tee -a "$LOG"
+
+            if ! ssh ${SSH_OPTS} "${SSH_USER}@${IP}" "tail -n ${TAIL_LINES} /var/log/job.log 2>/dev/null || echo '(job.log not created yet)'"; then
+              echo "WARN: SSH failed; checking droplet status from DO API..." | tee -a "$LOG"
+              D="$(curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}" || true)"
+              STATUS="$(echo "$D" | jq -r '.droplet.status // empty')"
+              echo "DO droplet status: ${STATUS:-unknown}" | tee -a "$LOG"
+
+              if [ "${STATUS}" = "off" ] || [ "${STATUS}" = "archive" ]; then
+                echo "Droplet is ${STATUS}; likely powered off. Stopping tail loop." | tee -a "$LOG"
                 break
               fi
-            done
-
-            if [ -z "${SSH_USER}" ]; then
-              echo "SSH login failed for ubuntu and root." | tee -a "$LOG"
-              exit 1
             fi
 
-            echo "Using SSH user: ${SSH_USER}" | tee -a "$LOG"
+            sleep ${SLEEP_SECS}
+          done
 
-            # --- Wait for the job to finish, while streaming logs ---
-            MAX_LOOPS=120
-            SLEEP_SECS=15
-            TAIL_LINES=30
+          if ! ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'test -f /opt/job/exit_code'; then
+            echo "Timed out waiting for /opt/job/exit_code (or droplet became unreachable)." | tee -a "$LOG"
+            echo "Attempting to fetch last job log tail..." | tee -a "$LOG"
+            ssh ${SSH_OPTS} "${SSH_USER}@${IP}" "tail -n 800 /var/log/job.log || true" || true
+            exit 1
+          fi
 
-            echo "Waiting for /opt/job/exit_code (tailing /var/log/job.log every ${SLEEP_SECS}s)..." | tee -a "$LOG"
+          echo "----- job.log (tail 800) -----"
+          ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'tail -n 800 /var/log/job.log || true' || true
 
-            for i in $(seq 1 ${MAX_LOOPS}); do
-              if ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'test -f /opt/job/exit_code'; then
-                echo "Job finished signal found: /opt/job/exit_code" | tee -a "$LOG"
-                break
-              fi
+          EXIT="$(ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'cat /opt/job/exit_code || echo 999' || echo 999)"
+          echo "Job exit code: ${EXIT}" | tee -a "$LOG"
 
-              echo "----- Loop ${i}/${MAX_LOOPS}: job still running. Log tail: -----" | tee -a "$LOG"
-              ssh ${SSH_OPTS} "${SSH_USER}@${IP}" "tail -n ${TAIL_LINES} /var/log/job.log 2>/dev/null || echo '(job.log not created yet)'" || true
+          if [ "${EXIT}" != "0" ]; then
+            exit 1
+          fi
 
-              sleep ${SLEEP_SECS}
-            done
+      - name: Debug droplet status + console output (on failure)
+        if: failure()
+        env:
+          DO_TOKEN: ${{ secrets.DO_TOKEN }}
+        run: |
+          set -euo pipefail
+          ID="${{ steps.create.outputs.droplet_id }}"
 
-            if ! ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'test -f /opt/job/exit_code'; then
-              echo "Timed out waiting for /opt/job/exit_code." | tee -a "$LOG"
-              ssh ${SSH_OPTS} "${SSH_USER}@${IP}" "tail -n 800 /var/log/job.log || true" || true
-              exit 1
-            fi
+          echo "Droplet status payload:"
+          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}" | jq .
 
-            echo "----- job.log (tail 200) -----"
-            ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'tail -n 800 /var/log/job.log || true' || true
-
-            EXIT=$(ssh ${SSH_OPTS} "${SSH_USER}@${IP}" 'cat /opt/job/exit_code || echo 999' || echo 999)
-            echo "Job exit code: ${EXIT}" | tee -a "$LOG"
-
-            if [ "${EXIT}" != "0" ]; then
-              exit 1
-            fi
+          echo "Droplet console output:"
+          curl -sS -H "Authorization: Bearer ${DO_TOKEN}" "${DO_API}/droplets/${ID}/console" | jq .
 
       - name: Destroy droplet (always)
         if: always()
@@ -459,7 +455,9 @@ jobs:
         run: |
           set -euo pipefail
           ID="${{ steps.create.outputs.droplet_id }}"
+          if [ -z "${ID}" ] || [ "${ID}" = "null" ]; then
+            echo "No droplet id found; nothing to destroy."
+            exit 0
+          fi
           echo "Destroying droplet ${ID}..."
-          curl -sS -X DELETE \
-            -H "Authorization: Bearer ${DO_TOKEN}" \
-            "${DO_API}/droplets/${ID}" | cat
+          curl -sS -X D
