@@ -64,19 +64,11 @@ cd /app/scrapy
 # PIPELINE: Algonquin
 # ------------------------------
 substep "Pipeline: Algonquin — Capacity"
-# run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 
 substep "Pipeline: Algonquin — Notices"
-# run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
+run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
 
-# ------------------------------
-# PIPELINE: <ADD NEW PIPELINE HERE>
-# ------------------------------
-# substep "Pipeline: XYZ — Capacity"
-run_cmd scrapy crawl xyz_capacity -s LOG_LEVEL=INFO
-#
-# substep "Pipeline: XYZ — Notices"
-run_cmd scrapy crawl xyz_notices -s LOG_LEVEL=INFO
 
 echo "[STEP 1] Scrapy ingestion completed"
 
