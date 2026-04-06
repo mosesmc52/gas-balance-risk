@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-import crawlers.items
 import scrapy
+from gas_ebb.items import NoticeItem
 from scrapy_splash import SplashRequest
 
 FORMAT_DATE_TIME_STRING = "%m/%d/%Y %I:%M:%S %p"

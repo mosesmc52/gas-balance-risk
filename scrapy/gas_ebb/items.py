@@ -59,3 +59,4 @@ class CapacityItem(scrapy.Item):
     TSP_Name = scrapy.Field()
     TSP = scrapy.Field()
     requested_post_date_utc = scrapy.Field()
+    Qty_Reason = scrapy.Field()

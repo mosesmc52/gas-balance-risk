@@ -67,7 +67,16 @@ substep "Pipeline: Algonquin — Capacity"
 run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 
 substep "Pipeline: Algonquin — Notices"
-run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
+run_cmd scrapy crawl algonquin_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Transco
+# ------------------------------
+substep "Pipeline: Transco — Capacity"
+run_cmd scrapy crawl transco_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Transco — Notices"
+run_cmd scrapy crawl transco_notices -a days_ago=3 -s LOG_LEVEL=INFO
 
 
 echo "[STEP 1] Scrapy ingestion completed"

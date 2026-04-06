@@ -46,18 +46,22 @@ class AlgonquinNoticesSpider(scrapy.Spider):
     # Splash defaults (tune as needed)
     splash_args = {"wait": 1.5, "timeout": 90}
 
-    # ---- NEW: CLI-configurable cutoff ----
+    # CLI-configurable lookback window
     # Run like:
-    #   scrapy crawl algonquin_notices -a cutoff_days=1
-    #   scrapy crawl algonquin_notices -a cutoff_days=3
-    def __init__(self, cutoff_days: int | str = 1, *args, **kwargs):
+    #   scrapy crawl algonquin_notices -a days_ago=1
+    #   scrapy crawl algonquin_notices -a days_ago=3
+    def __init__(self, days_ago: int | str = 1, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        raw_days_ago = kwargs.get("days_ago", days_ago)
+        legacy_cutoff_days = kwargs.get("cutoff_days")
+        if legacy_cutoff_days is not None and "days_ago" not in kwargs:
+            raw_days_ago = legacy_cutoff_days
         try:
-            self.cutoff_days = int(cutoff_days)
+            self.days_ago = int(raw_days_ago)
         except (TypeError, ValueError):
-            self.cutoff_days = 1
-        if self.cutoff_days < 0:
-            self.cutoff_days = 0
+            self.days_ago = 1
+        if self.days_ago < 0:
+            self.days_ago = 0
 
     # Scrapy 2.13+ preferred entrypoint (keeps you future-proof)
     async def start(self):
@@ -95,18 +99,17 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             )
 
     def parse_list(self, response):
-        # ---- UPDATED: use CLI-configured cutoff_days ----
-        cutoff_date = datetime.now().date() - timedelta(days=self.cutoff_days)
+        cutoff_date = datetime.now().date() - timedelta(days=self.days_ago)
 
         rows = response.xpath(
             "//tr[.//a[contains(@href, 'NoticeDetail') or contains(@href, 'NoticesDetail') or contains(@href, 'Notice')]]"
         )
 
         self.logger.info(
-            "list url=%s rows=%s cutoff_days=%s cutoff_date=%s",
+            "list url=%s rows=%s days_ago=%s cutoff_date=%s",
             response.url,
             len(rows),
-            self.cutoff_days,
+            self.days_ago,
             cutoff_date,
         )
 

@@ -1,9 +1,9 @@
 import json
 from datetime import datetime, timedelta
 
-import crawlers.items
 import pytz
 import scrapy
+from gas_ebb.items import NoticeItem
 from scrapy_splash import SplashRequest
 
 FORMAT_TIME_STRING = "%m/%d/%Y %H:%M:%S"
@@ -13,31 +13,57 @@ FORMAT_TIME_STRING = "%m/%d/%Y %H:%M:%S"
 
 
 class TransCoSpider(scrapy.Spider):
-    name = "transco"
+    name = "transco_notices"
     start_urls = [
         "https://www.1line.williams.com/Transco/info-postings/notices/critical-notices.html",
         "https://www.1line.williams.com/Transco/info-postings/notices/non-critical-notices.html",
     ]
     allowed_domains = ["williams.com"]
 
+    def __init__(self, days_ago=1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        raw_days_ago = kwargs.get("days_ago", days_ago)
+        legacy_cutoff_days = kwargs.get("cutoff_days")
+        if legacy_cutoff_days is not None and "days_ago" not in kwargs:
+            raw_days_ago = legacy_cutoff_days
+        try:
+            self.days_ago = int(raw_days_ago)
+        except (TypeError, ValueError):
+            self.days_ago = 1
+        if self.days_ago < 0:
+            self.days_ago = 0
+
     def hasPhrase(self, phrases=[], text=""):
         return any([phrase for phrase in phrases if phrase.lower() in text.lower()])
+
+    async def start(self):
+        for url in self.start_urls:
+            yield SplashRequest(
+                url=url,
+                callback=self.parse_iframe,
+                endpoint="render.json",
+                args={"wait": 2.0, "iframes": 1},
+                dont_filter=True,
+            )
 
     def start_requests(self):
         for url in self.start_urls:
             yield SplashRequest(
-                url,
-                self.parse_iframe,
+                url=url,
+                callback=self.parse_iframe,
                 endpoint="render.json",
                 args={"wait": 2.0, "iframes": 1},
+                dont_filter=True,
             )
 
     def parse_iframe(self, response):
         json_data = json.loads(response.text)
+        iframe_url = json_data["childFrames"][0]["requestedUrl"]
 
         yield SplashRequest(
-            json_data["childFrames"][0]["requestedUrl"],
-            self.parse_table,
+            url=iframe_url,
+            callback=self.parse_table,
+            dont_filter=True,
         )
 
     def update_to_utc(self, input):
@@ -45,7 +71,7 @@ class TransCoSpider(scrapy.Spider):
         if self.hasPhrase(["CST", "CDT"], input):
             timezone = pytz.timezone("America/Chicago")
         else:
-            raise ValueError(f"Timezone '{effective_date[20:]}' not known")
+            raise ValueError(f"Timezone '{input[20:]}' not known")
 
         dt = dt.replace(tzinfo=timezone)
 
@@ -55,19 +81,18 @@ class TransCoSpider(scrapy.Spider):
         return dt_utc
 
     def parse_table(self, response):
-        now = datetime.now()
+        cutoff_date = datetime.now().date() - timedelta(days=self.days_ago)
+
         for row in response.xpath("//tbody/tr"):
             effective_date = row.xpath(
                 'td[contains(@class,"ui-col-1")]/descendant::span/text()'
             ).get()
+            if not effective_date:
+                continue
 
             posted_date_dt = datetime.strptime(effective_date[:19], FORMAT_TIME_STRING)
 
-            is_posted_date_after_a_day_before_current_date = (
-                posted_date_dt.date() >= datetime.now().date() - timedelta(days=1)
-            )
-
-            if not is_posted_date_after_a_day_before_current_date:
+            if posted_date_dt.date() < cutoff_date:
                 break
 
             notice_path = row.xpath(
@@ -81,9 +106,14 @@ class TransCoSpider(scrapy.Spider):
                 .strip()
             )
 
-            url = f"https://www.1line.williams.com{notice_path}"
+            url = response.urljoin(notice_path)
 
-            yield SplashRequest(url, self.parse_notice, meta={"subject": subject})
+            yield SplashRequest(
+                url=url,
+                callback=self.parse_notice,
+                meta={"subject": subject},
+                dont_filter=True,
+            )
 
     def get_header_element(self, response, position):
         header = response.xpath("//tbody[position() = 1]/tr")
@@ -94,7 +124,7 @@ class TransCoSpider(scrapy.Spider):
 
     def parse_notice(self, response):
 
-        notice = crawlers.items.Notice()
+        notice = NoticeItem()
         notice["kind"] = "pipeline"
         notice["url"] = response.url
         notice["name"] = "Transcontinental"
@@ -130,7 +160,7 @@ class TransCoSpider(scrapy.Spider):
             _, response_date = self.get_header_element(response, 12)
             _, response_time = self.get_header_element(response, 13)
 
-            if not response_date and response_time:
+            if response_date and response_time:
                 notice["response_dt"] = self.update_to_utc(
                     f"{response_date} {response_time}"
                 )

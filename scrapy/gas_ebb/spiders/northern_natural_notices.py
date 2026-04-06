@@ -1,8 +1,8 @@
 import re
 from urllib.parse import urlencode
 
-import crawlers.items
 import scrapy
+from gas_ebb.items import NoticeItem
 
 
 class NNGPSpider(scrapy.Spider):
