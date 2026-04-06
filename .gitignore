@@ -211,3 +211,6 @@ data/**/*.csv
 data/**/*.txt
 data/**/*.json
 mongo_backup/
+scrapy/**/*.json
+**/*.zip
+**/.deployed/*
