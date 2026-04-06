@@ -123,9 +123,6 @@ mongo-clean-backup:
 	rm -rf $(MONGO_BACKUP_DIR)
 	@echo "🗑️  Removed backup folder: $(MONGO_BACKUP_DIR)"
 
-clean_eqb_pdfs:
-	find . -type f -name 'eqbPDFChartPlus*.pdf' -exec rm -f {} +
-
 do-fn-validate:
 	doctl serverless get-metadata $(DO_FN_DIR)
 
