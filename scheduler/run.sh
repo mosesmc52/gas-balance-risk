@@ -114,6 +114,24 @@ run_cmd scrapy crawl elpaso_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 substep "Pipeline: El Paso — Notices"
 run_cmd scrapy crawl elpaso_notices -a days_ago=3 -s LOG_LEVEL=INFO
 
+# ------------------------------
+# PIPELINE: Northern Natural
+# ------------------------------
+substep "Pipeline: Northern Natural — Capacity"
+run_cmd scrapy crawl nngp_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Northern Natural — Notices"
+run_cmd scrapy crawl nngp_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: ANR
+# ------------------------------
+substep "Pipeline: ANR — Capacity"
+run_cmd scrapy crawl anr_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: ANR — Notices"
+run_cmd scrapy crawl anr_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
 
 echo "[STEP 1] Scrapy ingestion completed"
 
