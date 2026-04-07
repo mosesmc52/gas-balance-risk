@@ -139,6 +139,9 @@ celerybeat.pid
 .env.docker
 .envrc
 .venv
+infra/do-functions/.env
+infra/do-functions/.deployed/
+infra/do-functions/packages/**/__deployer__.zip
 env/
 venv/
 ENV/
