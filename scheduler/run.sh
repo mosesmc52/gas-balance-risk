@@ -132,6 +132,24 @@ run_cmd scrapy crawl anr_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 substep "Pipeline: ANR — Notices"
 run_cmd scrapy crawl anr_notices -a days_ago=3 -s LOG_LEVEL=INFO
 
+# ------------------------------
+# PIPELINE: Louisiana
+# ------------------------------
+substep "Pipeline: Louisiana — Capacity"
+run_cmd scrapy crawl louisiana_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Louisiana — Notices"
+run_cmd scrapy crawl louisiana_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: SoCalGas
+# ------------------------------
+substep "Pipeline: SoCalGas — Capacity"
+run_cmd scrapy crawl so_cal_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: SoCalGas — Notices"
+run_cmd scrapy crawl so_cal_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
 
 echo "[STEP 1] Scrapy ingestion completed"
 
