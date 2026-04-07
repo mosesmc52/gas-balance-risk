@@ -170,7 +170,88 @@ substep "Pipeline: Algonquin — Capacity"
 run_cmd scrapy crawl algonquin_capacity -a days_ago=3 -s LOG_LEVEL=INFO
 
 substep "Pipeline: Algonquin — Notices"
-run_cmd scrapy crawl algonquin_notices -a cutoff_days=3 -s LOG_LEVEL=INFO
+run_cmd scrapy crawl algonquin_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Transco
+# ------------------------------
+substep "Pipeline: Transco — Capacity"
+run_cmd scrapy crawl transco_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Transco — Notices"
+run_cmd scrapy crawl transco_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Tennessee
+# ------------------------------
+substep "Pipeline: Tennessee — Capacity"
+run_cmd scrapy crawl tenn_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Tennessee — Notices"
+run_cmd scrapy crawl tenn_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Texas Eastern
+# ------------------------------
+substep "Pipeline: Texas Eastern — Capacity"
+run_cmd scrapy crawl tetco_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Texas Eastern — Notices"
+run_cmd scrapy crawl tetco_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Columbia Gas Transmission
+# ------------------------------
+substep "Pipeline: Columbia Gas Transmission — Capacity"
+run_cmd scrapy crawl tco_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Columbia Gas Transmission — Notices"
+run_cmd scrapy crawl tco_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: El Paso
+# ------------------------------
+substep "Pipeline: El Paso — Capacity"
+run_cmd scrapy crawl elpaso_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: El Paso — Notices"
+run_cmd scrapy crawl elpaso_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Northern Natural
+# ------------------------------
+substep "Pipeline: Northern Natural — Capacity"
+run_cmd scrapy crawl nngp_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Northern Natural — Notices"
+run_cmd scrapy crawl nngp_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: ANR
+# ------------------------------
+substep "Pipeline: ANR — Capacity"
+run_cmd scrapy crawl anr_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: ANR — Notices"
+run_cmd scrapy crawl anr_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: Louisiana
+# ------------------------------
+substep "Pipeline: Louisiana — Capacity"
+run_cmd scrapy crawl louisiana_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: Louisiana — Notices"
+run_cmd scrapy crawl louisiana_notices -a days_ago=3 -s LOG_LEVEL=INFO
+
+# ------------------------------
+# PIPELINE: SoCalGas
+# ------------------------------
+substep "Pipeline: SoCalGas — Capacity"
+run_cmd scrapy crawl so_cal_capacity -a days_ago=3 -s LOG_LEVEL=INFO
+
+substep "Pipeline: SoCalGas — Notices"
+run_cmd scrapy crawl so_cal_notices -a days_ago=3 -s LOG_LEVEL=INFO
 
 echo "[STEP 1] Scrapy ingestion completed"
 

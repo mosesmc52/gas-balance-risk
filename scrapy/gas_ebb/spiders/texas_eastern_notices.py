@@ -11,7 +11,6 @@ FORMAT_DATE_TIME_STRING = "%m/%d/%Y %I:%M:%S %p"
 
 
 def _clean_text_list(xs: list[str]) -> list[str]:
-    """Strip whitespace and drop empty strings."""
     out = []
     for x in xs:
         if x is None:
@@ -36,34 +35,21 @@ def _parse_dt(s: str) -> Optional[datetime]:
         return None
 
 
-class AlgonquinNoticesSpider(scrapy.Spider):
-    name = "algonquin_notices"
+class TexasEasternSpider(scrapy.Spider):
+    name = "tetco_notices"
     allowed_domains = ["infopost.enbridge.com", "localhost"]
-    start_urls = ["https://infopost.enbridge.com/infopost/AGHome.asp?Pipe=AG"]
-    mongo_collection = "ebb_algonquin_notices"
-    mongo_unique_fields = ["tsp", "notice_id", "posted_dt"]
-
-    # Splash defaults (tune as needed)
+    start_urls = ["https://infopost.enbridge.com/infopost/TEHome.asp?Pipe=TE"]
     splash_args = {"wait": 1.5, "timeout": 90}
 
-    # CLI-configurable lookback window
-    # Run like:
-    #   scrapy crawl algonquin_notices -a days_ago=1
-    #   scrapy crawl algonquin_notices -a days_ago=3
     def __init__(self, days_ago: int | str = 1, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        raw_days_ago = kwargs.get("days_ago", days_ago)
-        legacy_cutoff_days = kwargs.get("cutoff_days")
-        if legacy_cutoff_days is not None and "days_ago" not in kwargs:
-            raw_days_ago = legacy_cutoff_days
         try:
-            self.days_ago = int(raw_days_ago)
+            self.days_ago = int(days_ago)
         except (TypeError, ValueError):
             self.days_ago = 1
         if self.days_ago < 0:
             self.days_ago = 0
 
-    # Scrapy 2.13+ preferred entrypoint (keeps you future-proof)
     async def start(self):
         for url in self.start_urls:
             yield SplashRequest(
@@ -74,7 +60,6 @@ class AlgonquinNoticesSpider(scrapy.Spider):
                 dont_filter=True,
             )
 
-    # Backward compatibility (older Scrapy versions still call start_requests)
     def start_requests(self):
         for url in self.start_urls:
             yield SplashRequest(
@@ -87,8 +72,8 @@ class AlgonquinNoticesSpider(scrapy.Spider):
 
     def next_requests(self, response):
         for url in [
-            "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=AG&type=CRI",
-            "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=AG&type=NON",
+            "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=TE&type=CRI",
+            "https://infopost.enbridge.com/infopost/NoticesList.asp?pipe=TE&type=NON",
         ]:
             yield SplashRequest(
                 url=url,
@@ -105,34 +90,22 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             "//tr[.//a[contains(@href, 'NoticeDetail') or contains(@href, 'NoticesDetail') or contains(@href, 'Notice')]]"
         )
 
-        self.logger.info(
-            "list url=%s rows=%s days_ago=%s cutoff_date=%s",
-            response.url,
-            len(rows),
-            self.days_ago,
-            cutoff_date,
-        )
-
         for row in rows:
             posted_raw = row.xpath("normalize-space(.//td[2])").get()
             posted_dt = _parse_dt(posted_raw)
-
             if not posted_dt:
                 continue
 
             if posted_dt.date() < cutoff_date:
-                # assumes list is newest-first; safe early stop
                 break
 
             href = row.xpath(".//td[last()-1]//a/@href").get()
             if not href:
                 href = row.xpath(".//a/@href").get()
-
             if not href:
                 continue
 
             detail_url = response.urljoin(href)
-
             yield SplashRequest(
                 url=detail_url,
                 callback=self.parse_detail,
@@ -151,25 +124,18 @@ class AlgonquinNoticesSpider(scrapy.Spider):
             response.xpath('//div[contains(@id, "headingData")]//text()').getall()
         )
 
-        if len(heading) < 8:
-            self.logger.warning(
-                "Unexpected headingData length=%s url=%s", len(heading), response.url
-            )
-
         notice["tsp"] = _safe_get(heading, 0)
         notice["name"] = _safe_get(heading, 1)
-        notice["notice_id"] = _safe_get(heading, 7)
-
-        critical_label = _safe_get(heading, 2).lower()
-        notice["critical"] = "Y" if "critical" in critical_label else "N"
-
+        notice["critical"] = _safe_get(heading, 2)
         notice["effective_dt"] = _parse_dt(
             f"{_safe_get(heading, 3)} {_safe_get(heading, 4)}"
         )
-        notice["end_dt"] = _parse_dt(f"{_safe_get(heading, 5)} {_safe_get(heading, 6)}")
-
-        notice["status"] = _safe_get(heading, 8).lower()
-        notice["type"] = _safe_get(heading, 9).lower()
+        notice["end_dt"] = _parse_dt(
+            f"{_safe_get(heading, 5)} {_safe_get(heading, 6)}"
+        )
+        notice["notice_id"] = _safe_get(heading, 7)
+        notice["status"] = _safe_get(heading, 8)
+        notice["type"] = _safe_get(heading, 9)
 
         posted_dt = _parse_dt(f"{_safe_get(heading, 10)} {_safe_get(heading, 11)}")
         notice["posted_dt"] = posted_dt or response.meta.get("posted_dt")

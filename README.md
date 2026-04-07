@@ -198,6 +198,7 @@ Region: Midwest
     Stress drivers: Cold snaps, storage drawdowns
 
 9. Kinder Morgan Louisiana Pipeline
+https://pipeline2.kindermorgan.com/default.aspx?code=KMLP
 
 Region: Gulf Coast
 
