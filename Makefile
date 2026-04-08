@@ -22,6 +22,7 @@ MAIN_COMPOSE_FILE := docker-compose.yml
 DO_FN_DIR := infra/do-functions
 DO_FN_ENV := $(DO_FN_DIR)/.env
 DO_FN_NAME := launcher/gas-balance-risk
+DO_FN_NAMESPACE ?= nat-gas
 DROPLET_USER ?= root
 DROPLET_LOG_FILE ?= /var/log/job.log
 SPACES_ENDPOINT ?= https://zilla.sfo3.digitaloceanspaces.com
@@ -37,10 +38,10 @@ help:
 	@echo "  clean        Stop and remove volumes for main stack"
 	@echo "  logs         Follow logs for main stack"
 	@echo "  do-fn-validate      Validate DO Functions project metadata"
-	@echo "  do-fn-connect       Connect doctl to a DO Functions namespace"
+	@echo "  do-fn-connect       Connect doctl to the DO Functions namespace (default: $(DO_FN_NAMESPACE))"
 	@echo "  do-fn-status        Show DO Functions connection status"
-	@echo "  do-fn-deploy        Deploy infra/do-functions with runtime env"
-	@echo "  do-fn-deploy-remote Deploy infra/do-functions using remote build"
+	@echo "  do-fn-deploy        Deploy infra/do-functions with runtime env to the connected namespace"
+	@echo "  do-fn-deploy-remote Deploy infra/do-functions using remote build to the connected namespace"
 	@echo "  do-fn-list          List deployed DO functions"
 	@echo "  do-fn-get           Show deployed function metadata"
 	@echo "  do-fn-invoke        Invoke launcher/gas-balance-risk"
@@ -127,15 +128,19 @@ do-fn-validate:
 	doctl serverless get-metadata $(DO_FN_DIR)
 
 do-fn-connect:
-	doctl serverless connect
+	doctl serverless connect $(DO_FN_NAMESPACE)
 
 do-fn-status:
 	doctl serverless status
 
 do-fn-deploy:
+	@echo "Deploying $(DO_FN_NAME) to DigitalOcean Functions namespace '$(DO_FN_NAMESPACE)'"
+	@$(MAKE) do-fn-connect
 	doctl serverless deploy $(DO_FN_DIR) --env $(DO_FN_ENV)
 
 do-fn-deploy-remote:
+	@echo "Deploying $(DO_FN_NAME) to DigitalOcean Functions namespace '$(DO_FN_NAMESPACE)' with remote build"
+	@$(MAKE) do-fn-connect
 	doctl serverless deploy $(DO_FN_DIR) --env $(DO_FN_ENV) --remote-build
 
 do-fn-list:
