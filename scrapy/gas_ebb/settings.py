@@ -79,7 +79,7 @@ DOWNLOADER_MIDDLEWARES = {
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    # "gas_ebb.pipelines.MongoPipeline": 300,
+    "gas_ebb.pipelines.MongoPipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
@@ -111,8 +111,8 @@ HTTPCACHE_STORAGE = "scrapy_splash.SplashAwareFSCacheStorage"
 FEED_EXPORT_ENCODING = "utf-8"
 
 
-FEED_URI = "%s/data/%%(name)s/%%(time)s.json" % ROOT_PATH
-FEED_FORMAT = "csv"
+# FEED_URI = "%s/data/%%(name)s/%%(time)s.json" % ROOT_PATH
+# FEED_FORMAT = "csv"
 # TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 MONGO_URI = os.getenv("MONGO_URI")
