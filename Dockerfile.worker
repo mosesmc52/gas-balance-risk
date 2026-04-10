@@ -1,4 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
+
+ARG MONGO_TOOLS_VERSION=100.14.1
 
 # System deps: cron + supervisor + build tools (keep minimal)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,17 +8,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor \
     ca-certificates \
     curl \
-    gnupg \
     build-essential \
-  && curl -fsSL https://pgp.mongodb.com/server-7.0.asc \
-       | gpg --dearmor -o /usr/share/keyrings/mongodb-server.gpg \
-  && echo "deb [ signed-by=/usr/share/keyrings/mongodb-server.gpg ] \
-       https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" \
-       > /etc/apt/sources.list.d/mongodb-org.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
-       mongodb-database-tools \
-  && rm -rf /var/lib/apt/lists/*
+  && arch="$(dpkg --print-architecture)" \
+  && case "$arch" in \
+       amd64) mongo_tools_archive="mongodb-database-tools-debian12-x86_64-${MONGO_TOOLS_VERSION}.tgz" ;; \
+       arm64) mongo_tools_archive="mongodb-database-tools-ubuntu2204-arm64-${MONGO_TOOLS_VERSION}.tgz" ;; \
+       *) echo "Unsupported architecture for MongoDB database tools: $arch" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL "https://fastdl.mongodb.org/tools/db/${mongo_tools_archive}" -o /tmp/mongodb-database-tools.tgz \
+  && mkdir -p /tmp/mongodb-database-tools \
+  && tar -xzf /tmp/mongodb-database-tools.tgz -C /tmp/mongodb-database-tools --strip-components=1 \
+  && install -m 0755 /tmp/mongodb-database-tools/bin/* /usr/local/bin/ \
+  && rm -rf /tmp/mongodb-database-tools /tmp/mongodb-database-tools.tgz /var/lib/apt/lists/*
 
 
 WORKDIR /app
@@ -37,10 +40,6 @@ COPY supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 COPY scheduler/crontab /etc/cron.d/gas_risk_cron
 RUN chmod 0644 /etc/cron.d/gas_risk_cron && crontab /etc/cron.d/gas_risk_cron
-
-# Cron file permissions + register crontab
-RUN chmod 0644 /etc/cron.d/gas_risk_cron \
-  && crontab /etc/cron.d/gas_risk_cron
 
 # Log to stdout/stderr
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

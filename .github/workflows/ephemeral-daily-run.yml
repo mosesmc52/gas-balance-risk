@@ -1,6 +1,6 @@
 name: Ephemeral Daily Run (DigitalOcean)
 
-"on":
+on:
 #   schedule:
 #     - cron: "0 18 * * 1-5"
   workflow_dispatch: {}
