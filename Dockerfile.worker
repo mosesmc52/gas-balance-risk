@@ -34,6 +34,7 @@ RUN poetry install --no-root
 
 # Copy application code
 COPY . /app
+RUN install -m 0755 /app/scheduler/run.sh /app/run.sh
 
 # Supervisor config + cron schedule
 COPY supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
