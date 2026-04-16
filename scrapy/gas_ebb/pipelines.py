@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 import pymongo
 from pymongo.errors import DuplicateKeyError
+from scrapy.exceptions import DropItem
 
 
 class MongoPipeline:
@@ -78,10 +79,9 @@ class MongoPipeline:
             missing = [f for f in unique_fields if f not in doc or doc[f] in (None, "")]
             if missing:
                 spider.logger.warning(
-                    "Missing unique fields %s; inserting without dedupe", missing
+                    "Missing unique fields %s; dropping item", missing
                 )
-                self.collection.insert_one(doc)
-                return item
+                raise DropItem(f"Missing unique fields: {missing}")
 
             filt = {f: doc[f] for f in unique_fields}
             self.collection.update_one(
